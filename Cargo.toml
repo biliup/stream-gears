@@ -6,12 +6,20 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
 name = "stream_gears"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "lib"]
 
 [dependencies]
 pyo3 = { version = "0.16.3", features = ["extension-module"] }
 biliup = "0.1.9"
+reqwest = { version = "*", features = ["blocking", "deflate", "gzip"] }
+m3u8-rs = "4.0.0"
+nom = "7"
+serde = "1"
+serde_json = "1.0"
+bytes = "1.1.0"
+byteorder = "1.4.3"
 anyhow = "1.0"
+thiserror = "1.0"
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"

@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use biliup::client::Client;
 use biliup::line::{self, Probe};
-use biliup::video::{Studio, Video};
+use biliup::video::{BiliBili, Studio, Video};
 use biliup::VideoFile;
 use pyo3::{pyclass, FromPyObject, PyResult};
 use std::path::PathBuf;
@@ -81,6 +81,16 @@ pub async fn upload(
         .title(title)
         .videos(videos)
         .build();
+    if !studio.cover.is_empty() {
+        let url = BiliBili::new(&login_info, &client)
+            .cover_up(
+                &std::fs::read(&studio.cover)
+                    .with_context(|| format!("cover: {}", studio.cover))?,
+            )
+            .await?;
+        println!("{url}");
+        studio.cover = url;
+    }
     studio.submit(&login_info).await?;
     // Ok(videos)
     Ok(())
