@@ -1,5 +1,4 @@
 // source: https://github.com/rust-av/flavors/blob/master/src/parser.rs
-use std::str::from_utf8;
 use nom::bits::bits;
 use nom::bits::streaming::take;
 use nom::bytes::streaming::tag;
@@ -10,6 +9,7 @@ use nom::number::streaming::{be_f64, be_i16, be_i24, be_u16, be_u24, be_u32, be_
 use nom::sequence::{pair, terminated, tuple};
 use nom::{Err, IResult, Needed};
 use serde::Serialize;
+use std::str::from_utf8;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Header {
@@ -222,52 +222,54 @@ pub fn audio_data(input: &[u8], size: usize) -> IResult<&[u8], AudioData> {
     }
 
     let take_bits = tuple((take(4usize), take(2usize), take(1usize), take(1usize)));
-    bits::<_, _, Error<_>, _, _>(take_bits)(input).and_then(|(_, (sformat, srate, ssize, stype))| {
-        let sformat = match sformat {
-            0 => SoundFormat::PCM_NE,
-            1 => SoundFormat::ADPCM,
-            2 => SoundFormat::MP3,
-            3 => SoundFormat::PCM_LE,
-            4 => SoundFormat::NELLYMOSER_16KHZ_MONO,
-            5 => SoundFormat::NELLYMOSER_8KHZ_MONO,
-            6 => SoundFormat::NELLYMOSER,
-            7 => SoundFormat::PCM_ALAW,
-            8 => SoundFormat::PCM_ULAW,
-            10 => SoundFormat::AAC,
-            11 => SoundFormat::SPEEX,
-            14 => SoundFormat::MP3_8KHZ,
-            15 => SoundFormat::DEVICE_SPECIFIC,
-            _ => return Err(Err::Error(Error::new(input, ErrorKind::Alt))),
-        };
-        let srate = match srate {
-            0 => SoundRate::_5_5KHZ,
-            1 => SoundRate::_11KHZ,
-            2 => SoundRate::_22KHZ,
-            3 => SoundRate::_44KHZ,
-            _ => return Err(Err::Error(Error::new(input, ErrorKind::Alt))),
-        };
-        let ssize = match ssize {
-            0 => SoundSize::Snd8bit,
-            1 => SoundSize::Snd16bit,
-            _ => return Err(Err::Error(Error::new(input, ErrorKind::Alt))),
-        };
-        let stype = match stype {
-            0 => SoundType::SndMono,
-            1 => SoundType::SndStereo,
-            _ => return Err(Err::Error(Error::new(input, ErrorKind::Alt))),
-        };
+    bits::<_, _, Error<_>, _, _>(take_bits)(input).and_then(
+        |(_, (sformat, srate, ssize, stype))| {
+            let sformat = match sformat {
+                0 => SoundFormat::PCM_NE,
+                1 => SoundFormat::ADPCM,
+                2 => SoundFormat::MP3,
+                3 => SoundFormat::PCM_LE,
+                4 => SoundFormat::NELLYMOSER_16KHZ_MONO,
+                5 => SoundFormat::NELLYMOSER_8KHZ_MONO,
+                6 => SoundFormat::NELLYMOSER,
+                7 => SoundFormat::PCM_ALAW,
+                8 => SoundFormat::PCM_ULAW,
+                10 => SoundFormat::AAC,
+                11 => SoundFormat::SPEEX,
+                14 => SoundFormat::MP3_8KHZ,
+                15 => SoundFormat::DEVICE_SPECIFIC,
+                _ => return Err(Err::Error(Error::new(input, ErrorKind::Alt))),
+            };
+            let srate = match srate {
+                0 => SoundRate::_5_5KHZ,
+                1 => SoundRate::_11KHZ,
+                2 => SoundRate::_22KHZ,
+                3 => SoundRate::_44KHZ,
+                _ => return Err(Err::Error(Error::new(input, ErrorKind::Alt))),
+            };
+            let ssize = match ssize {
+                0 => SoundSize::Snd8bit,
+                1 => SoundSize::Snd16bit,
+                _ => return Err(Err::Error(Error::new(input, ErrorKind::Alt))),
+            };
+            let stype = match stype {
+                0 => SoundType::SndMono,
+                1 => SoundType::SndStereo,
+                _ => return Err(Err::Error(Error::new(input, ErrorKind::Alt))),
+            };
 
-        Ok((
-            &input[size..],
-            AudioData {
-                sound_format: sformat,
-                sound_rate: srate,
-                sound_size: ssize,
-                sound_type: stype,
-                sound_data: &input[1..size],
-            },
-        ))
-    })
+            Ok((
+                &input[size..],
+                AudioData {
+                    sound_format: sformat,
+                    sound_rate: srate,
+                    sound_size: ssize,
+                    sound_type: stype,
+                    sound_data: &input[1..size],
+                },
+            ))
+        },
+    )
 }
 
 #[derive(Debug, PartialEq, Eq)]

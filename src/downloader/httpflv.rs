@@ -1,26 +1,32 @@
+use crate::downloader::Segment;
+use crate::flv_parser::{
+    aac_audio_packet_header, avc_video_packet_header, complete_tag, header, script_data, tag_data,
+    tag_header, AACPacketType, AVCPacketType, CodecId, FrameType, SoundFormat, TagData, TagHeader,
+    TagType,
+};
+use crate::flv_writer;
+use crate::flv_writer::{
+    create_flv_file, write_previous_tag_size, write_tag_header, FlvTag, TagDataHeader,
+};
+use anyhow::{bail, Result};
+use byteorder::{BigEndian, ReadBytesExt};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
+use nom::error::Error;
+use nom::Needed::Unknown;
+use nom::{Err, IResult};
+use reqwest::blocking::Response;
+use reqwest::header::{HeaderMap, ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, USER_AGENT};
 use std::any::Any;
 use std::fs::File;
 use std::io;
+use std::io::Cursor;
 use std::io::{BufWriter, ErrorKind, Read, Write};
 use std::mem::MaybeUninit;
 use std::ops::{Deref, DerefMut};
 use std::time::Duration;
-use anyhow::{bail, Result};
-use bytes::{Buf, BufMut, Bytes, BytesMut};
-use nom::{Err, IResult};
-use nom::error::Error;
-use nom::Needed::Unknown;
-use reqwest::blocking::Response;
-use reqwest::header::{ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, HeaderMap, USER_AGENT};
 use tracing::{info, warn};
-use crate::downloader::Segment;
-use crate::flv_parser::{aac_audio_packet_header, AACPacketType, avc_video_packet_header, AVCPacketType, CodecId, complete_tag, FrameType, header, script_data, SoundFormat, tag_data, tag_header, TagData, TagHeader, TagType};
-use crate::flv_writer;
-use crate::flv_writer::{create_flv_file, FlvTag, TagDataHeader, write_previous_tag_size, write_tag_header};
-use byteorder::{BigEndian, ReadBytesExt};
-use std::io::Cursor;
 
-pub fn download(mut connection: Connection, file_name: &str, segment: Segment) ->Result<()> {
+pub fn download(mut connection: Connection, file_name: &str, segment: Segment) -> Result<()> {
     match parse_flv(connection, file_name, segment) {
         Ok(_) => {
             info!("Done... {file_name}");
@@ -32,8 +38,11 @@ pub fn download(mut connection: Connection, file_name: &str, segment: Segment) -
     Ok(())
 }
 
-
-fn parse_flv(mut connection: Connection, file_name: &str, segment: Segment) -> core::result::Result<(), crate::error::Error> {
+fn parse_flv(
+    mut connection: Connection,
+    file_name: &str,
+    segment: Segment,
+) -> core::result::Result<(), crate::error::Error> {
     let mut flv_tags_cache: Vec<(TagHeader, Bytes, Bytes)> = Vec::new();
 
     let previous_tag_size = connection.read_frame(4)?;
@@ -65,44 +74,58 @@ fn parse_flv(mut connection: Connection, file_name: &str, segment: Segment) -> c
         let bytes = connection.read_frame(tag_header.data_size as usize)?;
         let previous_tag_size = connection.read_frame(4)?;
         // out.write(&bytes)?;
-        let (i, flv_tag_data) = map_parse_err(tag_data(tag_header.tag_type, tag_header.data_size as usize)(&bytes), "tag data")?;
+        let (i, flv_tag_data) = map_parse_err(
+            tag_data(tag_header.tag_type, tag_header.data_size as usize)(&bytes),
+            "tag data",
+        )?;
         let flv_tag = match flv_tag_data {
             TagData::Audio(audio_data) => {
                 let packet_type = if audio_data.sound_format == SoundFormat::AAC {
-                    let (_, packet_header) = aac_audio_packet_header(audio_data.sound_data).expect("Error in parsing aac audio packet header.");
+                    let (_, packet_header) = aac_audio_packet_header(audio_data.sound_data)
+                        .expect("Error in parsing aac audio packet header.");
                     if packet_header.packet_type == AACPacketType::SequenceHeader {
                         if aac_sequence_header.is_some() {
                             warn!("Unexpected aac sequence header tag. {tag_header:?}");
                             // panic!("Unexpected aac_sequence_header tag.");
                         }
-                        aac_sequence_header = Some((tag_header, bytes.clone(), previous_tag_size.clone()))
+                        aac_sequence_header =
+                            Some((tag_header, bytes.clone(), previous_tag_size.clone()))
                     }
                     Some(packet_header.packet_type)
-                } else { None };
+                } else {
+                    None
+                };
                 let flv_tag = FlvTag {
                     header: tag_header,
-                    data: TagDataHeader::Audio{
+                    data: TagDataHeader::Audio {
                         sound_format: audio_data.sound_format,
                         sound_rate: audio_data.sound_rate,
                         sound_size: audio_data.sound_size,
                         sound_type: audio_data.sound_type,
-                        packet_type
-                    }
+                        packet_type,
+                    },
                 };
                 flv_tag
             }
             TagData::Video(video_data) => {
                 let (packet_type, composition_time) = if CodecId::H264 == video_data.codec_id {
-                    let (_, avc_video_header) = avc_video_packet_header(video_data.video_data).expect("Error in parsing avc video packet header.");
+                    let (_, avc_video_header) = avc_video_packet_header(video_data.video_data)
+                        .expect("Error in parsing avc video packet header.");
                     if avc_video_header.packet_type == AVCPacketType::SequenceHeader {
                         if h264_sequence_header.is_some() {
                             warn!("Unexpected h264 sequence header tag. {tag_header:?}");
                             // panic!("Unexpected h264 sequence header tag.");
                         }
-                        h264_sequence_header = Some((tag_header, bytes.clone(), previous_tag_size.clone()));
+                        h264_sequence_header =
+                            Some((tag_header, bytes.clone(), previous_tag_size.clone()));
                     }
-                    (Some(avc_video_header.packet_type), Some(avc_video_header.composition_time))
-                } else { (None, None) };
+                    (
+                        Some(avc_video_header.packet_type),
+                        Some(avc_video_header.composition_time),
+                    )
+                } else {
+                    (None, None)
+                };
                 let flv_tag = FlvTag {
                     header: tag_header,
                     data: TagDataHeader::Video {
@@ -110,7 +133,7 @@ fn parse_flv(mut connection: Connection, file_name: &str, segment: Segment) -> c
                         codec_id: video_data.codec_id,
                         packet_type,
                         composition_time,
-                    }
+                    },
                 };
                 flv_tag
             }
@@ -124,16 +147,27 @@ fn parse_flv(mut connection: Connection, file_name: &str, segment: Segment) -> c
 
                 let flv_tag = FlvTag {
                     header: tag_header,
-                    data: TagDataHeader::Script(tag_data)
+                    data: TagDataHeader::Script(tag_data),
                 };
                 flv_tag
             }
         };
         match &flv_tag {
-            FlvTag{ data: TagDataHeader::Video { frame_type: FrameType::Key, ..}, ..} => {
+            FlvTag {
+                data:
+                    TagDataHeader::Video {
+                        frame_type: FrameType::Key,
+                        ..
+                    },
+                ..
+            } => {
                 match segment {
                     Segment::Time(duration) => {
-                        if duration <= Duration::from_millis((flv_tag.header.timestamp - first_tag_time) as u64) {
+                        if duration
+                            <= Duration::from_millis(
+                                (flv_tag.header.timestamp - first_tag_time) as u64,
+                            )
+                        {
                             first_tag_time = flv_tag.header.timestamp;
                             file_index += 1;
                             let new_file_name = format!("{file_name}{file_index}");
@@ -212,12 +246,12 @@ fn parse_flv(mut connection: Connection, file_name: &str, segment: Segment) -> c
     Ok(())
 }
 
-
-pub fn map_parse_err<'a, T>(i_result: IResult<&'a [u8], T>, msg: &str) -> core::result::Result<(&'a [u8], T), crate::error::Error> {
+pub fn map_parse_err<'a, T>(
+    i_result: IResult<&'a [u8], T>,
+    msg: &str,
+) -> core::result::Result<(&'a [u8], T), crate::error::Error> {
     match i_result {
-        Ok((i, res)) => {
-            Ok((i, res))
-        }
+        Ok((i, res)) => Ok((i, res)),
         Err(nom::Err::Incomplete(needed)) => {
             Err(crate::error::Error::NomIncomplete(msg.to_string(), needed))
         }
@@ -237,9 +271,9 @@ pub struct Connection {
 
 impl Connection {
     pub(crate) fn new(resp: Response) -> Connection {
-        Connection{
+        Connection {
             resp,
-            buffer: BytesMut::with_capacity(8 * 1024)
+            buffer: BytesMut::with_capacity(8 * 1024),
         }
     }
 
@@ -249,7 +283,7 @@ impl Connection {
             if chunk_size <= self.buffer.len() {
                 let bytes = Bytes::copy_from_slice(&self.buffer[..chunk_size]);
                 self.buffer.advance(chunk_size as usize);
-                return Ok(bytes)
+                return Ok(bytes);
             }
             // BytesMut::with_capacity(0).deref_mut()
             // tokio::fs::File::open("").read()
@@ -260,7 +294,7 @@ impl Connection {
             };
 
             if n == 0 {
-                return Ok(self.buffer.split().freeze())
+                return Ok(self.buffer.split().freeze());
             }
             self.buffer.put_slice(&buf[..n]);
         }
@@ -269,25 +303,25 @@ impl Connection {
 
 #[cfg(test)]
 mod tests {
-    use std::ops::Deref;
+    use crate::downloader::httpflv::download;
     use anyhow::Result;
     use bytes::{Buf, BufMut, BytesMut};
-    use crate::downloader::httpflv::download;
+    use std::ops::Deref;
 
     #[test]
     fn byte_it_works() -> Result<()> {
         let mut bb = bytes::BytesMut::with_capacity(10);
         println!("chunk {:?}", bb.chunk());
         println!("capacity {}", bb.capacity());
-        bb.put( &b"hello"[..]);
+        bb.put(&b"hello"[..]);
         println!("chunk {:?}", bb.chunk());
         println!("remaining {}", bb.remaining());
         bb.advance(5);
         println!("capacity {}", bb.capacity());
         println!("chunk {:?}", bb.chunk());
         println!("remaining {}", bb.remaining());
-        bb.put( &b"hello"[..]);
-        bb.put( &b"hello"[..]);
+        bb.put(&b"hello"[..]);
+        bb.put(&b"hello"[..]);
         println!("chunk {:?}", bb.chunk());
         println!("capacity {}", bb.capacity());
         println!("remaining {}", bb.remaining());

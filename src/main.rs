@@ -1,11 +1,13 @@
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 use std::env;
 use std::io::{BufReader, BufWriter, ErrorKind, Read};
-use bytes::{Buf, BufMut, Bytes, BytesMut};
 use stream_gears::downloader::httpflv::map_parse_err;
-use stream_gears::flv_parser::{aac_audio_packet_header, avc_video_packet_header, CodecId, header, script_data, SoundFormat, tag_data, tag_header, TagData, TagHeader};
-use stream_gears::flv_writer::{self, FlvTag, TagDataHeader, write_tag_header};
 use stream_gears::error::Error;
-
+use stream_gears::flv_parser::{
+    aac_audio_packet_header, avc_video_packet_header, header, script_data, tag_data, tag_header,
+    CodecId, SoundFormat, TagData, TagHeader,
+};
+use stream_gears::flv_writer::{self, write_tag_header, FlvTag, TagDataHeader};
 
 fn main() -> Result<(), Error> {
     let args: Vec<String> = env::args().collect();
@@ -29,9 +31,11 @@ fn main() -> Result<(), Error> {
         let previous_tag_size = reader.read_frame(4)?;
 
         let t_header = reader.read_frame(11)?;
-        if t_header.is_empty() { break; }
+        if t_header.is_empty() {
+            break;
+        }
         let tag_header = match map_parse_err(tag_header(&t_header), "tag header") {
-            Ok((_, tag_header)) => {tag_header}
+            Ok((_, tag_header)) => tag_header,
             Err(e) => {
                 println!("{e}");
                 break;
@@ -39,7 +43,10 @@ fn main() -> Result<(), Error> {
         };
         tag_count += 1;
         let bytes = reader.read_frame(tag_header.data_size as usize)?;
-        let (i, flv_tag_data) = match map_parse_err(tag_data(tag_header.tag_type, tag_header.data_size as usize)(&bytes), "tag data") {
+        let (i, flv_tag_data) = match map_parse_err(
+            tag_data(tag_header.tag_type, tag_header.data_size as usize)(&bytes),
+            "tag data",
+        ) {
             Ok((i, flv_tag_data)) => (i, flv_tag_data),
             Err(e) => {
                 println!("{e}");
@@ -52,18 +59,21 @@ fn main() -> Result<(), Error> {
                 audio_tag_count += 1;
 
                 let packet_type = if audio_data.sound_format == SoundFormat::AAC {
-                    let (_, packet_header) = aac_audio_packet_header(audio_data.sound_data).unwrap();
+                    let (_, packet_header) =
+                        aac_audio_packet_header(audio_data.sound_data).unwrap();
                     Some(packet_header.packet_type)
-                } else { None };
+                } else {
+                    None
+                };
                 let flv_tag = FlvTag {
                     header: tag_header,
-                    data: TagDataHeader::Audio{
+                    data: TagDataHeader::Audio {
                         sound_format: audio_data.sound_format,
                         sound_rate: audio_data.sound_rate,
                         sound_size: audio_data.sound_size,
                         sound_type: audio_data.sound_type,
-                        packet_type
-                    }
+                        packet_type,
+                    },
                 };
                 flv_tag
             }
@@ -71,9 +81,15 @@ fn main() -> Result<(), Error> {
                 video_tag_count += 1;
 
                 let (packet_type, composition_time) = if CodecId::H264 == video_data.codec_id {
-                    let (_, avc_video_header) = avc_video_packet_header(video_data.video_data).unwrap();
-                    (Some(avc_video_header.packet_type), Some(avc_video_header.composition_time))
-                } else { (None, None) };
+                    let (_, avc_video_header) =
+                        avc_video_packet_header(video_data.video_data).unwrap();
+                    (
+                        Some(avc_video_header.packet_type),
+                        Some(avc_video_header.composition_time),
+                    )
+                } else {
+                    (None, None)
+                };
                 let flv_tag = FlvTag {
                     header: tag_header,
                     data: TagDataHeader::Video {
@@ -81,7 +97,7 @@ fn main() -> Result<(), Error> {
                         codec_id: video_data.codec_id,
                         packet_type,
                         composition_time,
-                    }
+                    },
                 };
                 flv_tag
             }
@@ -91,7 +107,7 @@ fn main() -> Result<(), Error> {
                 let (_, tag_data) = script_data(i).unwrap();
                 let flv_tag = FlvTag {
                     header: tag_header,
-                    data: TagDataHeader::Script(tag_data)
+                    data: TagDataHeader::Script(tag_data),
                 };
                 flv_tag
             }
@@ -105,7 +121,7 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
-pub struct Reader<T>{
+pub struct Reader<T> {
     read: T,
     buffer: BytesMut,
 }
@@ -114,7 +130,7 @@ impl<T: Read> Reader<T> {
     fn new(read: T) -> Reader<T> {
         Reader {
             read,
-            buffer: BytesMut::with_capacity(8 * 1024)
+            buffer: BytesMut::with_capacity(8 * 1024),
         }
     }
 
@@ -124,7 +140,7 @@ impl<T: Read> Reader<T> {
             if chunk_size <= self.buffer.len() {
                 let bytes = Bytes::copy_from_slice(&self.buffer[..chunk_size]);
                 self.buffer.advance(chunk_size as usize);
-                return Ok(bytes)
+                return Ok(bytes);
             }
             // BytesMut::with_capacity(0).deref_mut()
             // tokio::fs::File::open("").read()
@@ -135,7 +151,7 @@ impl<T: Read> Reader<T> {
                 Err(e) => return Err(e),
             };
             if n == 0 {
-                return Ok(self.buffer.split().freeze())
+                return Ok(self.buffer.split().freeze());
             }
             self.buffer.put_slice(&buf[..n]);
         }

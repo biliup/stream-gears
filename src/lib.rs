@@ -1,35 +1,40 @@
-mod uploader;
 pub mod downloader;
+pub mod error;
 pub mod flv_parser;
 pub mod flv_writer;
-pub mod error;
+mod uploader;
 
-use std::collections::HashMap;
+use crate::downloader::{construct_headers, Segment};
 use crate::uploader::UploadLine;
 use anyhow::Error;
 use biliup::client::Client;
 use pyo3::prelude::*;
+use reqwest::header::HeaderMap;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
-use reqwest::header::HeaderMap;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::Registry;
-use crate::downloader::{construct_headers, Segment};
 
 #[derive(FromPyObject)]
-pub enum PySegment{
-    Time{
+pub enum PySegment {
+    Time {
         #[pyo3(attribute("time"))]
-        time: u64
+        time: u64,
     },
     Size {
         #[pyo3(attribute("size"))]
-        size: u64
-    }
+        size: u64,
+    },
 }
 
 #[pyfunction]
-fn download(url: &str, header_map: HashMap<String, String>, file_name: &str, segment: PySegment) -> PyResult<()>  {
+fn download(
+    url: &str,
+    header_map: HashMap<String, String>,
+    file_name: &str,
+    segment: PySegment,
+) -> PyResult<()> {
     let map = construct_headers(header_map);
     // 输出到控制台中
     let formatting_layer = tracing_subscriber::FmtSubscriber::builder()
@@ -44,25 +49,24 @@ fn download(url: &str, header_map: HashMap<String, String>, file_name: &str, seg
 
     let collector = formatting_layer.with(file_layer);
     let segment = match segment {
-        PySegment::Time{time} => {
-            Segment::Time(Duration::from_secs(time))
-        }
-        PySegment::Size{ size } => {
-            Segment::Size(size)
-        }
+        PySegment::Time { time } => Segment::Time(Duration::from_secs(time)),
+        PySegment::Size { size } => Segment::Size(size),
     };
     tracing::subscriber::with_default(collector, || -> PyResult<()> {
         match downloader::download(url, map, file_name, segment) {
             Ok(res) => Ok(res),
             // Ok(_) => {  },
             Err(err) => {
-                return Err(pyo3::exceptions::PyRuntimeError::new_err(format!("{}, {}", err.root_cause(), err.to_string())));
+                return Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
+                    "{}, {}",
+                    err.root_cause(),
+                    err.to_string()
+                )));
             }
         }
     })?;
     Ok(())
 }
-
 
 #[pyfunction]
 fn upload(
@@ -98,12 +102,28 @@ fn upload(
 
     tracing::subscriber::with_default(collector, || -> PyResult<()> {
         match rt.block_on(uploader::upload(
-            video_path, cookie_file, line, limit, title, tid, tag, copyright, source, desc, dynamic, cover, dtime,
+            video_path,
+            cookie_file,
+            line,
+            limit,
+            title,
+            tid,
+            tag,
+            copyright,
+            source,
+            desc,
+            dynamic,
+            cover,
+            dtime,
         )) {
             Ok(res) => Ok(res),
             // Ok(_) => {  },
             Err(err) => {
-                return Err(pyo3::exceptions::PyRuntimeError::new_err(format!("{}, {}", err.root_cause(), err.to_string())));
+                return Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
+                    "{}, {}",
+                    err.root_cause(),
+                    err.to_string()
+                )));
             }
         }
     })?;

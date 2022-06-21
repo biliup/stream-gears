@@ -1,21 +1,29 @@
+use crate::downloader::httpflv::Connection;
+use crate::flv_parser::header;
+use nom::{Err, IResult};
+use reqwest::blocking::Response;
+use reqwest::header::{
+    HeaderMap, HeaderName, HeaderValue, InvalidHeaderValue, ACCEPT, ACCEPT_ENCODING,
+    ACCEPT_LANGUAGE, CONNECTION, REFERER, USER_AGENT,
+};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufWriter, Read};
 use std::str::FromStr;
 use std::thread::sleep;
 use std::time::Duration;
-use nom::{Err, IResult};
-use reqwest::header::{ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, CONNECTION, HeaderMap, HeaderName, HeaderValue, InvalidHeaderValue, REFERER, USER_AGENT};
-use reqwest::blocking::Response;
-use crate::downloader::httpflv::Connection;
-use crate::flv_parser::header;
 
-pub mod httpflv;
 mod hls;
+pub mod httpflv;
 
-pub fn download(url: &str, headers: HeaderMap, file_name: &str, segment: Segment) -> anyhow::Result<()> {
+pub fn download(
+    url: &str,
+    headers: HeaderMap,
+    file_name: &str,
+    segment: Segment,
+) -> anyhow::Result<()> {
     let mut response = get_response(url, &headers)?;
-    let buf = &mut [0u8;9];
+    let buf = &mut [0u8; 9];
     response.read_exact(buf)?;
     // let out = File::create(format!("{}.flv", file_name)).expect("Unable to create file.");
     // let mut writer = BufWriter::new(out);
@@ -44,13 +52,16 @@ pub fn download(url: &str, headers: HeaderMap, file_name: &str, segment: Segment
 pub fn construct_headers(hash_map: HashMap<String, String>) -> HeaderMap {
     let mut headers = HeaderMap::new();
     for (key, value) in hash_map.iter() {
-        headers.insert(HeaderName::from_str(key).unwrap(), HeaderValue::from_str(value).unwrap());
+        headers.insert(
+            HeaderName::from_str(key).unwrap(),
+            HeaderValue::from_str(value).unwrap(),
+        );
     }
     headers
 }
 
 pub fn get_response(url: &str, headers: &HeaderMap) -> anyhow::Result<Response> {
-    let mut resp =  retry(|| {
+    let mut resp = retry(|| {
         reqwest::blocking::Client::new()
             .get(url)
             .header(ACCEPT, "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
@@ -64,7 +75,7 @@ pub fn get_response(url: &str, headers: &HeaderMap) -> anyhow::Result<Response> 
     Ok(resp)
 }
 
-fn retry<O, E: std::fmt::Display>(mut f: impl FnMut()-> Result<O, E>) -> Result<O, E> {
+fn retry<O, E: std::fmt::Display>(mut f: impl FnMut() -> Result<O, E>) -> Result<O, E> {
     let mut retries = 3;
     loop {
         match f() {
@@ -81,18 +92,17 @@ fn retry<O, E: std::fmt::Display>(mut f: impl FnMut()-> Result<O, E>) -> Result<
     }
 }
 
-
-pub enum Segment{
+pub enum Segment {
     Time(Duration),
-    Size(u64)
+    Size(u64),
 }
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use crate::downloader::{download, Segment};
     use anyhow::Result;
     use reqwest::header::HeaderMap;
-    use crate::downloader::{download, Segment};
+    use std::time::Duration;
 
     #[test]
     fn it_works() -> Result<()> {
@@ -101,7 +111,7 @@ mod tests {
             // Segment::Time(Duration::from_secs(30))
             HeaderMap::new(),
             "testdouyu",
-            Segment::Size(20 * 1024 * 1024)
+            Segment::Size(20 * 1024 * 1024),
         )?;
         Ok(())
     }

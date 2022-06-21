@@ -35,9 +35,12 @@ pub async fn upload(
     dtime: Option<u32>,
 ) -> Result<()> {
     let client: Client = Default::default();
-    let file = std::fs::File::options().read(true).write(true).open(cookie_file);
+    let file = std::fs::File::options()
+        .read(true)
+        .write(true)
+        .open(&cookie_file);
     let login_info = client
-        .login_by_cookies(file.with_context(||"cookies.json")?)
+        .login_by_cookies(file.with_context(|| cookie_file.to_str().unwrap().to_string())?)
         .await?;
     let mut videos = Vec::new();
     let line = match line {

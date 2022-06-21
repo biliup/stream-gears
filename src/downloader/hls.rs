@@ -1,13 +1,13 @@
+use anyhow::Result;
+use m3u8_rs::Playlist;
+use reqwest::header::{HeaderMap, ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, USER_AGENT};
+use reqwest::Url;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
-use m3u8_rs::Playlist;
-use reqwest::header::{ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, HeaderMap, USER_AGENT};
-use anyhow::Result;
-use reqwest::Url;
 use tracing::{debug, warn};
 
-pub fn download(url: &str, headers: &HeaderMap, file_name: &str) ->Result<()> {
+pub fn download(url: &str, headers: &HeaderMap, file_name: &str) -> Result<()> {
     println!("Downloading {}...", url);
     let mut resp = super::get_response(url, headers)?;
     println!("{}", resp.status());
@@ -30,13 +30,13 @@ pub fn download(url: &str, headers: &HeaderMap, file_name: &str) ->Result<()> {
                 file.write(&bs)?;
                 panic!("Unable to parse the content.")
             }
-        },
+        }
         Ok((i, Playlist::MediaPlaylist(pl))) => {
             println!("Media playlist:\n{:#?}", pl);
             println!("index {}", pl.media_sequence);
             pl
-        },
-        Err(e) =>  panic!("Parsing error: \n{}", e),
+        }
+        Err(e) => panic!("Parsing error: \n{}", e),
     };
     let mut previous_last_segment = 0;
     loop {
@@ -46,14 +46,14 @@ pub fn download(url: &str, headers: &HeaderMap, file_name: &str) ->Result<()> {
         }
         let mut seq = pl.media_sequence;
         for segment in &pl.segments {
-            if seq > previous_last_segment{
-                if (previous_last_segment > 0) && (seq > (previous_last_segment+1)) {
+            if seq > previous_last_segment {
+                if (previous_last_segment > 0) && (seq > (previous_last_segment + 1)) {
                     println!("SEGMENT INFO SKIPPED");
                     warn!("SEGMENT INFO SKIPPED");
                 }
                 println!("Downloading segment...");
                 debug!("Yield segment");
-                download_to_file(media_url.join( &segment.uri)?, file_name, headers)?;
+                download_to_file(media_url.join(&segment.uri)?, file_name, headers)?;
                 previous_last_segment = seq;
             }
             seq += 1;
@@ -71,20 +71,21 @@ pub fn download(url: &str, headers: &HeaderMap, file_name: &str) ->Result<()> {
 fn download_to_file(url: Url, file_name: &str, headers: &HeaderMap) -> Result<()> {
     println!("url: {url}");
     let mut response = super::get_response(url.as_str(), headers)?;
-    let mut out = File::options().append(true).open(format!("{file_name}.ts"))?;
+    let mut out = File::options()
+        .append(true)
+        .open(format!("{file_name}.ts"))?;
     response.copy_to(&mut out)?;
     Ok(())
 }
 
-
 #[cfg(test)]
 mod tests {
+    use crate::downloader::hls::download;
     use anyhow::Result;
     use reqwest::Url;
-    use crate::downloader::hls::download;
 
     #[test]
-    fn test_url()  -> Result<()> {
+    fn test_url() -> Result<()> {
         let url = Url::parse("h://host.path/to/remote/resource.m3u8")?;
         let scheme = url.scheme();
         let new_url = url.join("http://path.host/remote/resource.ts")?;
