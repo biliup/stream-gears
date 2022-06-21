@@ -1,4 +1,3 @@
-use std::arch::x86_64::_blci_u32;
 use std::fs::File;
 use crate::flv_parser::{AACPacketType, AudioDataHeader, AVCPacketType, CodecId, FrameType, ScriptData, SoundFormat, SoundRate, SoundSize, SoundType, Tag, TagHeader, VideoDataHeader};
 use serde::Serialize;
@@ -17,12 +16,6 @@ const FLV_HEADER: [u8; 9] = [
 ]; // 9
 
 
-// struct FlvWriter;
-//
-//
-// impl FlvWriter {
-//
-// }
 pub fn create_flv_file(file_name: &str) -> std::io::Result<impl Write> {
     let mut out = File::create(format!("{file_name}.flv")).expect("Unable to create flv file.");
     let mut buf_writer = BufWriter::new(out);

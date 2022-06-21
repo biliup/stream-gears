@@ -13,7 +13,7 @@ pub fn download(url: &str, headers: &HeaderMap, file_name: &str) ->Result<()> {
     println!("{}", resp.status());
     // let mut resp = resp.bytes_stream();
     let bytes = resp.bytes()?;
-    File::create(file_name)?;
+    File::create(format!("{file_name}.ts"))?;
     let mut media_url = Url::parse(url)?;
     let mut pl = match m3u8_rs::parse_playlist(&bytes) {
         Ok((i, Playlist::MasterPlaylist(pl))) => {
@@ -71,7 +71,7 @@ pub fn download(url: &str, headers: &HeaderMap, file_name: &str) ->Result<()> {
 fn download_to_file(url: Url, file_name: &str, headers: &HeaderMap) -> Result<()> {
     println!("url: {url}");
     let mut response = super::get_response(url.as_str(), headers)?;
-    let mut out = File::options().append(true).open(file_name)?;
+    let mut out = File::options().append(true).open(format!("{file_name}.ts"))?;
     response.copy_to(&mut out)?;
     Ok(())
 }

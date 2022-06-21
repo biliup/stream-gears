@@ -1,11 +1,13 @@
 use std::collections::HashMap;
-use std::io::Read;
+use std::fs::File;
+use std::io::{BufWriter, Read};
 use std::str::FromStr;
 use std::thread::sleep;
 use std::time::Duration;
 use nom::{Err, IResult};
-use reqwest::header::{ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, HeaderMap, HeaderName, HeaderValue, InvalidHeaderValue, REFERER, USER_AGENT};
+use reqwest::header::{ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, CONNECTION, HeaderMap, HeaderName, HeaderValue, InvalidHeaderValue, REFERER, USER_AGENT};
 use reqwest::blocking::Response;
+use crate::downloader::httpflv::Connection;
 use crate::flv_parser::header;
 
 pub mod httpflv;
@@ -15,11 +17,18 @@ pub fn download(url: &str, headers: HeaderMap, file_name: &str, segment: Segment
     let mut response = get_response(url, &headers)?;
     let buf = &mut [0u8;9];
     response.read_exact(buf)?;
-    // let content = response.read(buf)?;
+    // let out = File::create(format!("{}.flv", file_name)).expect("Unable to create file.");
+    // let mut writer = BufWriter::new(out);
+    // let mut buf = [0u8; 8 * 1024];
+    // response.copy_to(&mut writer)?;
+    // io::copy(&mut resp, &mut out).expect("Unable to copy the content.");
     match header(buf) {
         Ok((i, header)) => {
             println!("header: {header:#?}");
-            httpflv::download(url, &headers, file_name, segment)?;
+            println!("{}", response.status());
+            let mut connection = Connection::new(response);
+            println!("Downloading {}...", url);
+            httpflv::download(connection, file_name, segment)?;
         }
         Err(Err::Incomplete(needed)) => {
             println!("needed: {needed:?}")
@@ -82,15 +91,18 @@ pub enum Segment{
 mod tests {
     use std::time::Duration;
     use anyhow::Result;
+    use reqwest::header::HeaderMap;
     use crate::downloader::{download, Segment};
 
     #[test]
     fn it_works() -> Result<()> {
-        // download(
-        //     "new_test",
-        //     // Segment::Time(Duration::from_secs(30))
-        //     Segment::Size(20 * 1024 * 1024)
-        // )?;
+        download(
+            "url",
+            // Segment::Time(Duration::from_secs(30))
+            HeaderMap::new(),
+            "testdouyu",
+            Segment::Size(20 * 1024 * 1024)
+        )?;
         Ok(())
     }
 }
