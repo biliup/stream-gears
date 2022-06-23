@@ -36,7 +36,7 @@ pub fn download(
             println!("{}", response.status());
             let mut connection = Connection::new(response);
             println!("Downloading {}...", url);
-            httpflv::download(connection, file_name, segment)?;
+            httpflv::download(connection, file_name, segment);
         }
         Err(Err::Incomplete(needed)) => {
             println!("needed: {needed:?}")
@@ -106,12 +106,13 @@ mod tests {
 
     #[test]
     fn it_works() -> Result<()> {
+        tracing_subscriber::fmt::init();
         download(
             "url",
-            // Segment::Time(Duration::from_secs(30))
             HeaderMap::new(),
             "testdouyu",
-            Segment::Size(20 * 1024 * 1024),
+            Segment::Size(2000 * 1024 * 1024),
+            // Segment::Time(Duration::from_secs(30))
         )?;
         Ok(())
     }

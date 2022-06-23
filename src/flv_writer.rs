@@ -26,6 +26,12 @@ pub fn create_flv_file(file_name: &str) -> std::io::Result<impl Write> {
     Ok(buf_writer)
 }
 
+pub fn write_tag(out: &mut impl Write, tag_header: &TagHeader, body: &[u8], previous_tag_size: &[u8]) -> std::io::Result<usize> {
+    write_tag_header(out, tag_header)?;
+    out.write(body)?;
+    out.write(previous_tag_size)
+}
+
 pub fn write_tag_header(writer: &mut impl Write, tag_header: &TagHeader) -> std::io::Result<()> {
     writer.write_u8(tag_header.tag_type as u8)?;
     writer.write_u24::<BigEndian>(tag_header.data_size)?;

@@ -1,7 +1,9 @@
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use std::env;
 use std::io::{BufReader, BufWriter, ErrorKind, Read};
-use stream_gears::downloader::httpflv::map_parse_err;
+use std::time::Duration;
+use stream_gears::downloader::httpflv::{Connection, download, map_parse_err};
+use stream_gears::downloader::Segment;
 use stream_gears::error::Error;
 use stream_gears::flv_parser::{
     aac_audio_packet_header, avc_video_packet_header, header, script_data, tag_data, tag_header,
@@ -10,6 +12,22 @@ use stream_gears::flv_parser::{
 use stream_gears::flv_writer::{self, write_tag_header, FlvTag, TagDataHeader};
 
 fn main() -> Result<(), Error> {
+    tracing_subscriber::fmt::init();
+
+    let args: Vec<String> = env::args().collect();
+    let file_name = &args[1];
+    let flv_file = std::fs::File::open(file_name)?;
+    let buf_reader = BufReader::new(flv_file);
+    let mut connection = Connection::new(buf_reader);
+    connection.read_frame(9)?;
+    let result = download(connection, &(file_name.to_owned() + "new"), Segment::Time(Duration::from_secs(60 * 60 * 24)));
+    // Ok(result)
+    // generate_json()?;
+    Ok(())
+}
+
+
+fn generate_json() -> Result<(), Error> {
     let args: Vec<String> = env::args().collect();
     let file_name = &args[1];
     let flv_file = std::fs::File::open(file_name)?;
@@ -120,6 +138,7 @@ fn main() -> Result<(), Error> {
     println!("video tag count: {video_tag_count}");
     Ok(())
 }
+
 
 pub struct Reader<T> {
     read: T,
