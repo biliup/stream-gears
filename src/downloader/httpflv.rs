@@ -271,7 +271,7 @@ fn is_splitting(flv_tag: FlvTag, segment: &Segment, first_tag_time: &mut u32, do
 }
 
 fn format_filename(file_name: &str) -> core::result::Result<String, time::Error> {
-    let time_str = time::OffsetDateTime::now_local()?.format(FORMAT)?;
+    let time_str = time::OffsetDateTime::now_utc().format(FORMAT)?;
     Ok(format!("{file_name}_{time_str}"))
 }
 
