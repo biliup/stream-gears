@@ -1,13 +1,11 @@
 use crate::flv_parser::{
-    AACPacketType, AVCPacketType, AudioDataHeader, CodecId, FrameType, ScriptData, SoundFormat,
-    SoundRate, SoundSize, SoundType, Tag, TagHeader, VideoDataHeader,
+    AACPacketType, AVCPacketType, CodecId, FrameType, ScriptData, SoundFormat, SoundRate,
+    SoundSize, SoundType, TagHeader,
 };
 use byteorder::{BigEndian, WriteBytesExt};
 use serde::Serialize;
 use std::fs::File;
 use std::io::{BufWriter, Write};
-use std::path::{Path, PathBuf};
-use tracing_subscriber::fmt::format;
 
 const FLV_HEADER: [u8; 9] = [
     0x46, // 'F'
@@ -19,14 +17,19 @@ const FLV_HEADER: [u8; 9] = [
 ]; // 9
 
 pub fn create_flv_file(file_name: &str) -> std::io::Result<impl Write> {
-    let mut out = File::create(format!("{file_name}.flv")).expect("Unable to create flv file.");
+    let out = File::create(format!("{file_name}.flv")).expect("Unable to create flv file.");
     let mut buf_writer = BufWriter::new(out);
     buf_writer.write(&FLV_HEADER)?;
     write_previous_tag_size(&mut buf_writer, 0)?;
     Ok(buf_writer)
 }
 
-pub fn write_tag(out: &mut impl Write, tag_header: &TagHeader, body: &[u8], previous_tag_size: &[u8]) -> std::io::Result<usize> {
+pub fn write_tag(
+    out: &mut impl Write,
+    tag_header: &TagHeader,
+    body: &[u8],
+    previous_tag_size: &[u8],
+) -> std::io::Result<usize> {
     write_tag_header(out, tag_header)?;
     out.write(body)?;
     out.write(previous_tag_size)

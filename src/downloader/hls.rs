@@ -1,27 +1,27 @@
 use anyhow::Result;
 use m3u8_rs::Playlist;
-use reqwest::header::{HeaderMap, ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, USER_AGENT};
+use reqwest::header::HeaderMap;
 use reqwest::Url;
 use std::fs::File;
 use std::io::Write;
-use std::path::Path;
+
 use tracing::{debug, warn};
 
 pub fn download(url: &str, headers: &HeaderMap, file_name: &str) -> Result<()> {
     println!("Downloading {}...", url);
-    let mut resp = super::get_response(url, headers)?;
+    let resp = super::get_response(url, headers)?;
     println!("{}", resp.status());
     // let mut resp = resp.bytes_stream();
     let bytes = resp.bytes()?;
     File::create(format!("{file_name}.ts"))?;
     let mut media_url = Url::parse(url)?;
     let mut pl = match m3u8_rs::parse_playlist(&bytes) {
-        Ok((i, Playlist::MasterPlaylist(pl))) => {
+        Ok((_i, Playlist::MasterPlaylist(pl))) => {
             println!("Master playlist:\n{:#?}", pl);
             media_url = media_url.join(&pl.variants[0].uri)?;
             println!("media url: {media_url}");
-            let mut resp = super::get_response(media_url.as_str(), headers)?;
-            let mut bs = resp.bytes()?;
+            let resp = super::get_response(media_url.as_str(), headers)?;
+            let bs = resp.bytes()?;
             // println!("{:?}", bs);
             if let Ok((_, pl)) = m3u8_rs::parse_media_playlist(&bs) {
                 pl
@@ -31,7 +31,7 @@ pub fn download(url: &str, headers: &HeaderMap, file_name: &str) -> Result<()> {
                 panic!("Unable to parse the content.")
             }
         }
-        Ok((i, Playlist::MediaPlaylist(pl))) => {
+        Ok((_i, Playlist::MediaPlaylist(pl))) => {
             println!("Media playlist:\n{:#?}", pl);
             println!("index {}", pl.media_sequence);
             pl
@@ -40,7 +40,7 @@ pub fn download(url: &str, headers: &HeaderMap, file_name: &str) -> Result<()> {
     };
     let mut previous_last_segment = 0;
     loop {
-        if pl.segments.len() == 0 {
+        if pl.segments.is_empty() {
             println!("Segments array is empty - stream finished");
             break;
         }
@@ -58,8 +58,8 @@ pub fn download(url: &str, headers: &HeaderMap, file_name: &str) -> Result<()> {
             }
             seq += 1;
         }
-        let mut resp = super::get_response(media_url.as_str(), headers)?;
-        let mut bs = resp.bytes()?;
+        let resp = super::get_response(media_url.as_str(), headers)?;
+        let bs = resp.bytes()?;
         if let Ok((_, playlist)) = m3u8_rs::parse_media_playlist(&bs) {
             pl = playlist;
         }
@@ -80,7 +80,7 @@ fn download_to_file(url: Url, file_name: &str, headers: &HeaderMap) -> Result<()
 
 #[cfg(test)]
 mod tests {
-    use crate::downloader::hls::download;
+
     use anyhow::Result;
     use reqwest::Url;
 

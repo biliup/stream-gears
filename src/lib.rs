@@ -6,15 +6,13 @@ mod uploader;
 
 use crate::downloader::{construct_headers, Segment};
 use crate::uploader::UploadLine;
-use anyhow::Error;
-use biliup::client::Client;
+
 use pyo3::prelude::*;
-use reqwest::header::HeaderMap;
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::Registry;
 
 #[derive(FromPyObject)]
 pub enum PySegment {
@@ -60,7 +58,7 @@ fn download(
                 return Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
                     "{}, {}",
                     err.root_cause(),
-                    err.to_string()
+                    err
                 )));
             }
         }
@@ -122,7 +120,7 @@ fn upload(
                 return Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
                     "{}, {}",
                     err.root_cause(),
-                    err.to_string()
+                    err
                 )));
             }
         }

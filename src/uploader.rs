@@ -1,9 +1,9 @@
 use anyhow::{Context, Result};
 use biliup::client::Client;
 use biliup::line::{self, Probe};
-use biliup::video::{BiliBili, Studio, Video};
+use biliup::video::{BiliBili, Studio};
 use biliup::VideoFile;
-use pyo3::{pyclass, FromPyObject, PyResult};
+use pyo3::pyclass;
 use std::path::PathBuf;
 use std::time::Instant;
 use tracing::info;

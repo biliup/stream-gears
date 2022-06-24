@@ -2,14 +2,14 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 use std::env;
 use std::io::{BufReader, BufWriter, ErrorKind, Read};
 use std::time::Duration;
-use stream_gears::downloader::httpflv::{Connection, download, map_parse_err};
+use stream_gears::downloader::httpflv::{download, map_parse_err, Connection};
 use stream_gears::downloader::Segment;
 use stream_gears::error::Error;
 use stream_gears::flv_parser::{
     aac_audio_packet_header, avc_video_packet_header, header, script_data, tag_data, tag_header,
-    CodecId, SoundFormat, TagData, TagHeader,
+    CodecId, SoundFormat, TagData,
 };
-use stream_gears::flv_writer::{self, write_tag_header, FlvTag, TagDataHeader};
+use stream_gears::flv_writer::{self, FlvTag, TagDataHeader};
 
 fn main() -> Result<(), Error> {
     tracing_subscriber::fmt::init();
@@ -20,12 +20,15 @@ fn main() -> Result<(), Error> {
     let buf_reader = BufReader::new(flv_file);
     let mut connection = Connection::new(buf_reader);
     connection.read_frame(9)?;
-    let result = download(connection, &(file_name.to_owned() + "new"), Segment::Time(Duration::from_secs(60 * 60 * 24)));
+    let _result = download(
+        connection,
+        &(file_name.to_owned() + "new"),
+        Segment::Time(Duration::from_secs(60 * 60 * 24)),
+    );
     // Ok(result)
     // generate_json()?;
     Ok(())
 }
-
 
 fn generate_json() -> Result<(), Error> {
     let args: Vec<String> = env::args().collect();
@@ -38,7 +41,7 @@ fn generate_json() -> Result<(), Error> {
     let mut audio_tag_count = 0;
     let mut video_tag_count = 0;
     let mut tag_count = 0;
-    let mut err_count = 0;
+    let _err_count = 0;
     let flv_header = reader.read_frame(9)?;
     let file = std::fs::File::create(format!("{file_name}.json"))?;
     let mut writer = BufWriter::new(file);
@@ -46,7 +49,7 @@ fn generate_json() -> Result<(), Error> {
     let (_, header) = map_parse_err(header(&flv_header), "flv header")?;
     flv_writer::to_json(&mut writer, &header)?;
     loop {
-        let previous_tag_size = reader.read_frame(4)?;
+        let _previous_tag_size = reader.read_frame(4)?;
 
         let t_header = reader.read_frame(11)?;
         if t_header.is_empty() {
@@ -83,7 +86,8 @@ fn generate_json() -> Result<(), Error> {
                 } else {
                     None
                 };
-                let flv_tag = FlvTag {
+
+                FlvTag {
                     header: tag_header,
                     data: TagDataHeader::Audio {
                         sound_format: audio_data.sound_format,
@@ -92,8 +96,7 @@ fn generate_json() -> Result<(), Error> {
                         sound_type: audio_data.sound_type,
                         packet_type,
                     },
-                };
-                flv_tag
+                }
             }
             TagData::Video(video_data) => {
                 video_tag_count += 1;
@@ -108,7 +111,8 @@ fn generate_json() -> Result<(), Error> {
                 } else {
                     (None, None)
                 };
-                let flv_tag = FlvTag {
+
+                FlvTag {
                     header: tag_header,
                     data: TagDataHeader::Video {
                         frame_type: video_data.frame_type,
@@ -116,8 +120,7 @@ fn generate_json() -> Result<(), Error> {
                         packet_type,
                         composition_time,
                     },
-                };
-                flv_tag
+                }
             }
             TagData::Script => {
                 script_tag_count += 1;
@@ -138,7 +141,6 @@ fn generate_json() -> Result<(), Error> {
     println!("video tag count: {video_tag_count}");
     Ok(())
 }
-
 
 pub struct Reader<T> {
     read: T,

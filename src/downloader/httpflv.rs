@@ -1,32 +1,22 @@
 use crate::downloader::Segment;
 use crate::flv_parser::{
-    aac_audio_packet_header, avc_video_packet_header, complete_tag, header, script_data, tag_data,
-    tag_header, AACPacketType, AVCPacketType, CodecId, FrameType, SoundFormat, TagData, TagHeader,
-    TagType,
+    aac_audio_packet_header, avc_video_packet_header, script_data, tag_data, tag_header,
+    AACPacketType, AVCPacketType, CodecId, FrameType, SoundFormat, TagData, TagHeader,
 };
-use crate::flv_writer;
-use crate::flv_writer::{create_flv_file, write_previous_tag_size, write_tag_header, FlvTag, TagDataHeader, write_tag};
-use anyhow::{bail, Result};
-use byteorder::{BigEndian, ReadBytesExt};
+
+use crate::flv_writer::{create_flv_file, write_tag, write_tag_header, FlvTag, TagDataHeader};
+
 use bytes::{Buf, BufMut, Bytes, BytesMut};
-use nom::error::Error;
-use nom::Needed::Unknown;
+
 use nom::{Err, IResult};
-use reqwest::blocking::Response;
-use reqwest::header::{HeaderMap, ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, USER_AGENT};
-use std::any::Any;
-use std::fs::File;
-use std::io;
-use std::io::Cursor;
-use std::io::{BufWriter, ErrorKind, Read, Write};
-use std::mem::MaybeUninit;
-use std::ops::{Deref, DerefMut};
-use std::time::Duration;
+
+use std::io::{ErrorKind, Read, Write};
+
 use chrono::{DateTime, Local};
+use std::time::Duration;
 use tracing::{info, warn};
 
-
-pub fn download<T: Read>(mut connection: Connection<T>, file_name: &str, segment: Segment) {
+pub fn download<T: Read>(connection: Connection<T>, file_name: &str, segment: Segment) {
     match parse_flv(connection, file_name, segment) {
         Ok(_) => {
             info!("Done... {file_name}");
@@ -44,7 +34,7 @@ fn parse_flv<T: Read>(
 ) -> core::result::Result<(), crate::error::Error> {
     let mut flv_tags_cache: Vec<(TagHeader, Bytes, Bytes)> = Vec::new();
 
-    let previous_tag_size = connection.read_frame(4)?;
+    let _previous_tag_size = connection.read_frame(4)?;
     // let mut rdr = Cursor::new(previous_tag_size);
     // println!("{}", rdr.read_u32::<BigEndian>().unwrap());
     // let file = std::fs::File::create(format!("{file_name}_flv.json"))?;
@@ -67,7 +57,7 @@ fn parse_flv<T: Read>(
             break;
         }
 
-        let (_, mut tag_header) = map_parse_err(tag_header(&tag_header_bytes), "tag header")?;
+        let (_, tag_header) = map_parse_err(tag_header(&tag_header_bytes), "tag header")?;
         // write_tag_header(&mut out, &tag_header)?;
 
         let bytes = connection.read_frame(tag_header.data_size as usize)?;
@@ -87,7 +77,6 @@ fn parse_flv<T: Read>(
                             warn!("Unexpected aac sequence header tag. {tag_header:?}");
                             // panic!("Unexpected aac_sequence_header tag.");
                             // create_new = true;
-
                         }
                         aac_sequence_header =
                             Some((tag_header, bytes.clone(), previous_tag_size.clone()))
@@ -96,7 +85,8 @@ fn parse_flv<T: Read>(
                 } else {
                     None
                 };
-                let flv_tag = FlvTag {
+
+                FlvTag {
                     header: tag_header,
                     data: TagDataHeader::Audio {
                         sound_format: audio_data.sound_format,
@@ -105,8 +95,7 @@ fn parse_flv<T: Read>(
                         sound_type: audio_data.sound_type,
                         packet_type,
                     },
-                };
-                flv_tag
+                }
             }
             TagData::Video(video_data) => {
                 let (packet_type, composition_time) = if CodecId::H264 == video_data.codec_id {
@@ -128,7 +117,8 @@ fn parse_flv<T: Read>(
                 } else {
                     (None, None)
                 };
-                let flv_tag = FlvTag {
+
+                FlvTag {
                     header: tag_header,
                     data: TagDataHeader::Video {
                         frame_type: video_data.frame_type,
@@ -136,8 +126,7 @@ fn parse_flv<T: Read>(
                         packet_type,
                         composition_time,
                     },
-                };
-                flv_tag
+                }
             }
             TagData::Script => {
                 let (_, tag_data) = script_data(i).expect("Error in parsing script tag.");
@@ -173,10 +162,20 @@ fn parse_flv<T: Read>(
                     write_tag(&mut out, &on_meta_data.0, &on_meta_data.1, &on_meta_data.2)?;
                     // AACSequenceHeader
                     let aac_sequence_header = aac_sequence_header.as_ref().unwrap();
-                    write_tag(&mut out, &aac_sequence_header.0, &aac_sequence_header.1, &aac_sequence_header.2)?;
+                    write_tag(
+                        &mut out,
+                        &aac_sequence_header.0,
+                        &aac_sequence_header.1,
+                        &aac_sequence_header.2,
+                    )?;
                     // H264SequenceHeader
                     let h264_sequence_header = h264_sequence_header.as_ref().unwrap();
-                    write_tag(&mut out, &h264_sequence_header.0, &h264_sequence_header.1, &h264_sequence_header.2)?;
+                    write_tag(
+                        &mut out,
+                        &h264_sequence_header.0,
+                        &h264_sequence_header.1,
+                        &h264_sequence_header.2,
+                    )?;
                     info!("{new_file_name} splitting.");
                 }
 
@@ -193,7 +192,6 @@ fn parse_flv<T: Read>(
                 }
                 flv_tags_cache.clear();
                 if create_new {
-
                     let new_file_name = format_filename(file_name);
                     out = create_flv_file(&new_file_name)?;
                     // let on_meta_data = on_meta_data.as_ref().unwrap();
@@ -203,7 +201,12 @@ fn parse_flv<T: Read>(
                     write_tag(&mut out, &on_meta_data.0, &on_meta_data.1, &on_meta_data.2)?;
                     // AACSequenceHeader
                     let aac_sequence_header = aac_sequence_header.as_ref().unwrap();
-                    write_tag(&mut out, &aac_sequence_header.0, &aac_sequence_header.1, &aac_sequence_header.2)?;
+                    write_tag(
+                        &mut out,
+                        &aac_sequence_header.0,
+                        &aac_sequence_header.1,
+                        &aac_sequence_header.2,
+                    )?;
                     create_new = false;
                     info!("{new_file_name} splitting.");
                 }
@@ -218,14 +221,16 @@ fn parse_flv<T: Read>(
     Ok(())
 }
 
-
-fn is_splitting(flv_tag: FlvTag, segment: &Segment, first_tag_time: &mut u32, downloaded_size: &mut u64) -> bool {
+fn is_splitting(
+    flv_tag: FlvTag,
+    segment: &Segment,
+    first_tag_time: &mut u32,
+    downloaded_size: &mut u64,
+) -> bool {
     match segment {
         Segment::Time(duration) => {
             if duration
-                <= &Duration::from_millis(
-                (flv_tag.header.timestamp - *first_tag_time) as u64,
-            )
+                <= &Duration::from_millis((flv_tag.header.timestamp - *first_tag_time) as u64)
             {
                 *first_tag_time = flv_tag.header.timestamp;
                 // file_index += 1;
@@ -233,7 +238,9 @@ fn is_splitting(flv_tag: FlvTag, segment: &Segment, first_tag_time: &mut u32, do
                 // writer = BufWriter::new(file);
                 // info!("{file_name}{file_index} time splitting.");
                 true
-            } else { false }
+            } else {
+                false
+            }
         }
         Segment::Size(file_size) => {
             if *downloaded_size >= *file_size {
@@ -263,7 +270,9 @@ fn is_splitting(flv_tag: FlvTag, segment: &Segment, first_tag_time: &mut u32, do
                 // let file = std::fs::File::create(new_file_name + "_flv.json")?;
                 // writer = BufWriter::new(file);
                 true
-            } else { false }
+            } else {
+                false
+            }
         }
     }
 }
@@ -273,7 +282,6 @@ fn format_filename(file_name: &str) -> String {
     let time_str = local.format("%Y-%m-%dT%H_%M_%S");
     format!("{file_name}{time_str}")
 }
-
 
 pub fn map_parse_err<'a, T>(
     i_result: IResult<&'a [u8], T>,
@@ -332,10 +340,9 @@ impl<T: Read> Connection<T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::downloader::httpflv::download;
+
     use anyhow::Result;
     use bytes::{Buf, BufMut, BytesMut};
-    use std::ops::Deref;
 
     #[test]
     fn byte_it_works() -> Result<()> {

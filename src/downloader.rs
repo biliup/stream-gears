@@ -1,14 +1,13 @@
 use crate::downloader::httpflv::Connection;
 use crate::flv_parser::header;
-use nom::{Err, IResult};
+use nom::Err;
 use reqwest::blocking::Response;
 use reqwest::header::{
-    HeaderMap, HeaderName, HeaderValue, InvalidHeaderValue, ACCEPT, ACCEPT_ENCODING,
-    ACCEPT_LANGUAGE, CONNECTION, REFERER, USER_AGENT,
+    HeaderMap, HeaderName, HeaderValue, ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, USER_AGENT,
 };
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{BufWriter, Read};
+
+use std::io::Read;
 use std::str::FromStr;
 use std::thread::sleep;
 use std::time::Duration;
@@ -31,10 +30,10 @@ pub fn download(
     // response.copy_to(&mut writer)?;
     // io::copy(&mut resp, &mut out).expect("Unable to copy the content.");
     match header(buf) {
-        Ok((i, header)) => {
+        Ok((_i, header)) => {
             println!("header: {header:#?}");
             println!("{}", response.status());
-            let mut connection = Connection::new(response);
+            let connection = Connection::new(response);
             println!("Downloading {}...", url);
             httpflv::download(connection, file_name, segment);
         }
@@ -61,7 +60,7 @@ pub fn construct_headers(hash_map: HashMap<String, String>) -> HeaderMap {
 }
 
 pub fn get_response(url: &str, headers: &HeaderMap) -> anyhow::Result<Response> {
-    let mut resp = retry(|| {
+    let resp = retry(|| {
         reqwest::blocking::Client::new()
             .get(url)
             .header(ACCEPT, "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
@@ -102,7 +101,6 @@ mod tests {
     use crate::downloader::{download, Segment};
     use anyhow::Result;
     use reqwest::header::HeaderMap;
-    use std::time::Duration;
 
     #[test]
     fn it_works() -> Result<()> {
