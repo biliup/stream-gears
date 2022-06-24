@@ -22,11 +22,9 @@ use std::io::{BufWriter, ErrorKind, Read, Write};
 use std::mem::MaybeUninit;
 use std::ops::{Deref, DerefMut};
 use std::time::Duration;
-use time::format_description::FormatItem;
-use time::macros::format_description;
+use chrono::{DateTime, Local};
 use tracing::{info, warn};
 
-static FORMAT: &[FormatItem] = format_description!("[year]-[month]-[day]T[hour]-[minute]-[second]");
 
 pub fn download<T: Read>(mut connection: Connection<T>, file_name: &str, segment: Segment) {
     match parse_flv(connection, file_name, segment) {
@@ -53,7 +51,7 @@ fn parse_flv<T: Read>(
     // let mut writer = BufWriter::new(file);
     // flv_writer::to_json(&mut writer, &header)?;
 
-    let mut out = create_flv_file(&format_filename(file_name)?)?;
+    let mut out = create_flv_file(&format_filename(file_name))?;
     let mut first_tag_time = 0;
     let mut downloaded_size = 9 + 4;
     let mut on_meta_data = None;
@@ -168,7 +166,7 @@ fn parse_flv<T: Read>(
                 ..
             } => {
                 if is_splitting(flv_tag, &segment, &mut first_tag_time, &mut downloaded_size) {
-                    let new_file_name = format_filename(file_name)?;
+                    let new_file_name = format_filename(file_name);
                     out = create_flv_file(&new_file_name)?;
                     let on_meta_data = on_meta_data.as_ref().unwrap();
                     // onMetaData
@@ -196,7 +194,7 @@ fn parse_flv<T: Read>(
                 flv_tags_cache.clear();
                 if create_new {
 
-                    let new_file_name = format_filename(file_name)?;
+                    let new_file_name = format_filename(file_name);
                     out = create_flv_file(&new_file_name)?;
                     // let on_meta_data = on_meta_data.as_ref().unwrap();
                     // flv_tags_cache.push(on_meta_data)
@@ -270,9 +268,10 @@ fn is_splitting(flv_tag: FlvTag, segment: &Segment, first_tag_time: &mut u32, do
     }
 }
 
-fn format_filename(file_name: &str) -> core::result::Result<String, time::Error> {
-    let time_str = time::OffsetDateTime::now_utc().format(FORMAT)?;
-    Ok(format!("{file_name}{time_str}"))
+fn format_filename(file_name: &str) -> String {
+    let local: DateTime<Local> = Local::now();
+    let time_str = local.format("%Y-%m-%dT%H_%M_%S");
+    format!("{file_name}{time_str}")
 }
 
 
