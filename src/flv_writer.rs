@@ -3,9 +3,11 @@ use crate::flv_parser::{
     SoundSize, SoundType, TagHeader,
 };
 use byteorder::{BigEndian, WriteBytesExt};
+use chrono::{DateTime, Local};
 use serde::Serialize;
 use std::fs::File;
 use std::io::{BufWriter, Write};
+use tracing::error;
 
 const FLV_HEADER: [u8; 9] = [
     0x46, // 'F'
@@ -16,39 +18,75 @@ const FLV_HEADER: [u8; 9] = [
     0x00, 0x00, 0x00, 0x09, //flv header size
 ]; // 9
 
-pub fn create_flv_file(file_name: &str) -> std::io::Result<impl Write> {
-    let out = File::create(format!("{file_name}.flv")).expect("Unable to create flv file.");
-    let mut buf_writer = BufWriter::new(out);
-    buf_writer.write(&FLV_HEADER)?;
-    write_previous_tag_size(&mut buf_writer, 0)?;
-    Ok(buf_writer)
+pub struct FlvFile {
+    pub buf_writer: BufWriter<File>,
+    pub name: String,
 }
 
-pub fn write_tag(
-    out: &mut impl Write,
-    tag_header: &TagHeader,
-    body: &[u8],
-    previous_tag_size: &[u8],
-) -> std::io::Result<usize> {
-    write_tag_header(out, tag_header)?;
-    out.write(body)?;
-    out.write(previous_tag_size)
+impl FlvFile {
+    pub fn new(file_name: &str) -> std::io::Result<Self> {
+        let file_name = format_filename(file_name);
+        let out =
+            File::create(format!("{file_name}.flv.part")).expect("Unable to create flv file.");
+        let mut buf_writer = BufWriter::new(out);
+        buf_writer.write(&FLV_HEADER)?;
+        Self::write_previous_tag_size(&mut buf_writer, 0)?;
+        Ok(Self {
+            buf_writer,
+            name: file_name,
+        })
+    }
+
+    pub fn write_tag(
+        &mut self,
+        tag_header: &TagHeader,
+        body: &[u8],
+        previous_tag_size: &[u8],
+    ) -> std::io::Result<usize> {
+        self.write_tag_header(tag_header)?;
+        self.buf_writer.write(body)?;
+        self.buf_writer.write(previous_tag_size)
+    }
+
+    pub fn write_tag_header(&mut self, tag_header: &TagHeader) -> std::io::Result<()> {
+        self.buf_writer.write_u8(tag_header.tag_type as u8)?;
+        self.buf_writer
+            .write_u24::<BigEndian>(tag_header.data_size)?;
+        self.buf_writer
+            .write_u24::<BigEndian>(tag_header.timestamp & 0xffffff)?;
+        let timestamp_ext = (tag_header.timestamp >> 24 & 0xff) as u8;
+        self.buf_writer.write_u8(timestamp_ext)?;
+        self.buf_writer.write_u24::<BigEndian>(tag_header.stream_id)
+    }
+
+    pub fn write_previous_tag_size(
+        writer: &mut impl Write,
+        previous_tag_size: u32,
+    ) -> std::io::Result<usize> {
+        writer.write(&previous_tag_size.to_be_bytes())
+    }
 }
 
-pub fn write_tag_header(writer: &mut impl Write, tag_header: &TagHeader) -> std::io::Result<()> {
-    writer.write_u8(tag_header.tag_type as u8)?;
-    writer.write_u24::<BigEndian>(tag_header.data_size)?;
-    writer.write_u24::<BigEndian>(tag_header.timestamp & 0xffffff)?;
-    let timestamp_ext = (tag_header.timestamp >> 24 & 0xff) as u8;
-    writer.write_u8(timestamp_ext)?;
-    writer.write_u24::<BigEndian>(tag_header.stream_id)
+impl Drop for FlvFile {
+    fn drop(&mut self) {
+        std::fs::rename(
+            format!("{}.flv.part", self.name),
+            format!("{}.flv", self.name),
+        )
+        .unwrap_or_else(|e| error!("{e}"))
+    }
 }
 
-pub fn write_previous_tag_size(
-    writer: &mut impl Write,
-    previous_tag_size: u32,
-) -> std::io::Result<usize> {
-    writer.write(&previous_tag_size.to_be_bytes())
+// pub fn create_flv_file(file_name: &str) -> std::io::Result<impl Write> {
+//
+// }
+
+fn format_filename(file_name: &str) -> String {
+    let local: DateTime<Local> = Local::now();
+    // let time_str = local.format("%Y-%m-%dT%H_%M_%S");
+    let time_str = local.format(file_name);
+    // format!("{file_name}{time_str}")
+    time_str.to_string()
 }
 
 #[derive(Debug, PartialEq, Serialize)]
