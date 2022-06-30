@@ -3,7 +3,7 @@ use crate::flv_parser::header;
 use nom::Err;
 use reqwest::blocking::Response;
 use reqwest::header::{
-    HeaderMap, HeaderName, HeaderValue, ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, USER_AGENT,
+    ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, HeaderMap, HeaderName, HeaderValue, USER_AGENT,
 };
 use std::collections::HashMap;
 
@@ -11,9 +11,11 @@ use std::io::Read;
 use std::str::FromStr;
 use std::thread::sleep;
 use std::time::Duration;
+use util::Segment;
 
 mod hls;
 pub mod httpflv;
+pub mod util;
 
 pub fn download(
     url: &str,
@@ -59,7 +61,7 @@ pub fn construct_headers(hash_map: HashMap<String, String>) -> HeaderMap {
     headers
 }
 
-pub fn get_response(url: &str, headers: &HeaderMap) -> anyhow::Result<Response> {
+pub fn get_response(url: &str, headers: &HeaderMap) -> reqwest::Result<Response> {
     let resp = retry(|| {
         reqwest::blocking::Client::new()
             .get(url)
@@ -75,40 +77,38 @@ pub fn get_response(url: &str, headers: &HeaderMap) -> anyhow::Result<Response> 
 }
 
 fn retry<O, E: std::fmt::Display>(mut f: impl FnMut() -> Result<O, E>) -> Result<O, E> {
-    let mut retries = 3;
+    let mut retries = 0;
+    let mut wait = 1;
     loop {
         match f() {
-            Err(e) if retries > 0 => {
-                retries -= 1;
+            Err(e) if retries < 3 => {
+                retries += 1;
                 println!(
-                    "Retry attempt #{}. Sleeping 500ms before the next attempt. {e}",
-                    3 - retries,
+                    "Retry attempt #{}. Sleeping {wait}s before the next attempt. {e}",
+                    retries,
                 );
-                sleep(Duration::from_millis(500));
+                sleep(Duration::from_secs(wait));
+                wait *= 2;
             }
             res => break res,
         }
     }
 }
 
-pub enum Segment {
-    Time(Duration),
-    Size(u64),
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::downloader::{download, Segment};
+    use crate::downloader::download;
     use anyhow::Result;
     use reqwest::header::HeaderMap;
+    use crate::downloader::util::Segment;
 
     #[test]
     fn it_works() -> Result<()> {
         tracing_subscriber::fmt::init();
         download(
-            "url",
+            "",
             HeaderMap::new(),
-            "testdouyu",
+            "testdouyu%Y-%m-%dT%H_%M_%S",
             Segment::Size(2000 * 1024 * 1024),
             // Segment::Time(Duration::from_secs(30))
         )?;

@@ -1,11 +1,11 @@
-use anyhow::Result;
 use m3u8_rs::Playlist;
 use reqwest::header::HeaderMap;
-use reqwest::Url;
+use url::Url;
 use std::fs::File;
-use std::io::Write;
-
-use tracing::{debug, warn};
+use std::io::{BufWriter, Write};
+use crate::error::Result;
+use tracing::{debug, error, warn};
+use crate::downloader::util::format_filename;
 
 pub fn download(url: &str, headers: &HeaderMap, file_name: &str) -> Result<()> {
     println!("Downloading {}...", url);
@@ -13,7 +13,8 @@ pub fn download(url: &str, headers: &HeaderMap, file_name: &str) -> Result<()> {
     println!("{}", resp.status());
     // let mut resp = resp.bytes_stream();
     let bytes = resp.bytes()?;
-    File::create(format!("{file_name}.ts"))?;
+    let mut ts_file = TsFile::new(file_name);
+
     let mut media_url = Url::parse(url)?;
     let mut pl = match m3u8_rs::parse_playlist(&bytes) {
         Ok((_i, Playlist::MasterPlaylist(pl))) => {
@@ -48,12 +49,13 @@ pub fn download(url: &str, headers: &HeaderMap, file_name: &str) -> Result<()> {
         for segment in &pl.segments {
             if seq > previous_last_segment {
                 if (previous_last_segment > 0) && (seq > (previous_last_segment + 1)) {
-                    println!("SEGMENT INFO SKIPPED");
                     warn!("SEGMENT INFO SKIPPED");
                 }
-                println!("Downloading segment...");
                 debug!("Yield segment");
-                download_to_file(media_url.join(&segment.uri)?, file_name, headers)?;
+                if segment.discontinuity {
+                    ts_file = TsFile::new(file_name);
+                }
+                download_to_file(media_url.join(&segment.uri)?, headers, &mut ts_file.buf_writer)?;
                 previous_last_segment = seq;
             }
             seq += 1;
@@ -68,14 +70,43 @@ pub fn download(url: &str, headers: &HeaderMap, file_name: &str) -> Result<()> {
     Ok(())
 }
 
-fn download_to_file(url: Url, file_name: &str, headers: &HeaderMap) -> Result<()> {
-    println!("url: {url}");
+fn download_to_file(url: Url, headers: &HeaderMap, out: &mut impl Write) -> reqwest::Result<()> {
+    debug!("url: {url}");
     let mut response = super::get_response(url.as_str(), headers)?;
-    let mut out = File::options()
-        .append(true)
-        .open(format!("{file_name}.ts"))?;
-    response.copy_to(&mut out)?;
+    // let mut out = File::options()
+    //     .append(true)
+    //     .open(format!("{file_name}.ts"))?;
+    response.copy_to(out)?;
     Ok(())
+}
+
+
+pub struct TsFile {
+    pub buf_writer: BufWriter<File>,
+    pub name: String,
+}
+
+impl TsFile {
+    pub fn new(file_name: &str) -> Self {
+        let file_name = format_filename(file_name);
+        let out =
+            File::create(format!("{file_name}.ts.part")).expect("Unable to create ts file.");
+        let buf_writer = BufWriter::new(out);
+        Self {
+            buf_writer,
+            name: file_name,
+        }
+    }
+}
+
+impl Drop for TsFile {
+    fn drop(&mut self) {
+        std::fs::rename(
+            format!("{}.ts.part", self.name),
+            format!("{}.ts", self.name),
+        )
+            .unwrap_or_else(|e| error!("{e}"))
+    }
 }
 
 #[cfg(test)]

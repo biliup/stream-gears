@@ -1,4 +1,4 @@
-use crate::downloader::Segment;
+use crate::downloader::util::Segment;
 use crate::flv_parser::{
     aac_audio_packet_header, avc_video_packet_header, script_data, tag_data, tag_header,
     AACPacketType, AVCPacketType, CodecId, FrameType, SoundFormat, TagData, TagHeader,

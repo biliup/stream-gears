@@ -3,11 +3,11 @@ use crate::flv_parser::{
     SoundSize, SoundType, TagHeader,
 };
 use byteorder::{BigEndian, WriteBytesExt};
-use chrono::{DateTime, Local};
 use serde::Serialize;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use tracing::error;
+use crate::downloader::util;
 
 const FLV_HEADER: [u8; 9] = [
     0x46, // 'F'
@@ -25,7 +25,7 @@ pub struct FlvFile {
 
 impl FlvFile {
     pub fn new(file_name: &str) -> std::io::Result<Self> {
-        let file_name = format_filename(file_name);
+        let file_name = util::format_filename(file_name);
         let out =
             File::create(format!("{file_name}.flv.part")).expect("Unable to create flv file.");
         let mut buf_writer = BufWriter::new(out);
@@ -80,14 +80,6 @@ impl Drop for FlvFile {
 // pub fn create_flv_file(file_name: &str) -> std::io::Result<impl Write> {
 //
 // }
-
-fn format_filename(file_name: &str) -> String {
-    let local: DateTime<Local> = Local::now();
-    // let time_str = local.format("%Y-%m-%dT%H_%M_%S");
-    let time_str = local.format(file_name);
-    // format!("{file_name}{time_str}")
-    time_str.to_string()
-}
 
 #[derive(Debug, PartialEq, Serialize)]
 pub struct FlvTag<'a> {

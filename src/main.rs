@@ -3,7 +3,7 @@ use std::env;
 use std::io::{BufReader, BufWriter, ErrorKind, Read};
 use std::time::Duration;
 use stream_gears::downloader::httpflv::{download, map_parse_err, Connection};
-use stream_gears::downloader::Segment;
+use stream_gears::downloader::util::Segment;
 use stream_gears::error::Error;
 use stream_gears::flv_parser::{
     aac_audio_packet_header, avc_video_packet_header, header, script_data, tag_data, tag_header,

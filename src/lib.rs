@@ -4,7 +4,7 @@ pub mod flv_parser;
 pub mod flv_writer;
 mod uploader;
 
-use crate::downloader::{construct_headers, Segment};
+use crate::downloader::construct_headers;
 use crate::uploader::UploadLine;
 
 use pyo3::prelude::*;
@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 use tracing_subscriber::layer::SubscriberExt;
+use downloader::util::Segment;
 
 #[derive(FromPyObject)]
 pub enum PySegment {
