@@ -20,7 +20,7 @@ fn main() -> Result<(), Error> {
     let buf_reader = BufReader::new(flv_file);
     let mut connection = Connection::new(buf_reader);
     connection.read_frame(9)?;
-    let _result = download(
+    download(
         connection,
         &(file_name.to_owned() + "new"),
         Segment::Time(Duration::from_secs(60 * 60 * 24), Default::default()),
