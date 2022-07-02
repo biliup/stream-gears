@@ -9,11 +9,11 @@ use crate::uploader::UploadLine;
 
 use pyo3::prelude::*;
 
+use downloader::util::Segment;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 use tracing_subscriber::layer::SubscriberExt;
-use downloader::util::Segment;
 
 #[derive(FromPyObject)]
 pub enum PySegment {
@@ -50,8 +50,10 @@ fn download(
 
         let collector = formatting_layer.with(file_layer);
         let segment = match segment {
-            PySegment::Time { time } => Segment::Time(Duration::from_secs(time)),
-            PySegment::Size { size } => Segment::Size(size),
+            PySegment::Time { time } => {
+                Segment::Time(Duration::from_secs(time), Duration::default())
+            }
+            PySegment::Size { size } => Segment::Size(size, 0),
         };
         tracing::subscriber::with_default(collector, || -> PyResult<()> {
             match downloader::download(url, map, file_name, segment) {

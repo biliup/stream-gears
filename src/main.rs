@@ -23,7 +23,7 @@ fn main() -> Result<(), Error> {
     let _result = download(
         connection,
         &(file_name.to_owned() + "new"),
-        Segment::Time(Duration::from_secs(60 * 60 * 24)),
+        Segment::Time(Duration::from_secs(60 * 60 * 24), Default::default()),
     );
     // Ok(result)
     // generate_json()?;

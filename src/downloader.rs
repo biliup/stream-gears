@@ -3,7 +3,7 @@ use crate::flv_parser::header;
 use nom::Err;
 use reqwest::blocking::Response;
 use reqwest::header::{
-    ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, HeaderMap, HeaderName, HeaderValue, USER_AGENT,
+    HeaderMap, HeaderName, HeaderValue, ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, USER_AGENT,
 };
 use std::collections::HashMap;
 
@@ -44,7 +44,7 @@ pub fn download(
         }
         Err(e) => {
             println!("{e}");
-            hls::download(url, &headers, file_name)?;
+            hls::download(url, &headers, file_name, segment)?;
         }
     }
     Ok(())
@@ -98,19 +98,25 @@ fn retry<O, E: std::fmt::Display>(mut f: impl FnMut() -> Result<O, E>) -> Result
 #[cfg(test)]
 mod tests {
     use crate::downloader::download;
-    use anyhow::Result;
-    use reqwest::header::HeaderMap;
     use crate::downloader::util::Segment;
+    use anyhow::Result;
+    use reqwest::header::{HeaderMap, HeaderValue, REFERER};
 
     #[test]
     fn it_works() -> Result<()> {
         tracing_subscriber::fmt::init();
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            REFERER,
+            HeaderValue::from_static("https://live.bilibili.com"),
+        );
         download(
             "",
-            HeaderMap::new(),
+            headers,
             "testdouyu%Y-%m-%dT%H_%M_%S",
-            Segment::Size(2000 * 1024 * 1024),
-            // Segment::Time(Duration::from_secs(30))
+            // Segment::Size(20 * 1024 * 1024, 0),
+            Segment::Time(std::time::Duration::from_secs(60), Default::default()),
         )?;
         Ok(())
     }

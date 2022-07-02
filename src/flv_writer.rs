@@ -1,3 +1,4 @@
+use crate::downloader::util;
 use crate::flv_parser::{
     AACPacketType, AVCPacketType, CodecId, FrameType, ScriptData, SoundFormat, SoundRate,
     SoundSize, SoundType, TagHeader,
@@ -7,7 +8,6 @@ use serde::Serialize;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use tracing::error;
-use crate::downloader::util;
 
 const FLV_HEADER: [u8; 9] = [
     0x46, // 'F'
@@ -29,7 +29,7 @@ impl FlvFile {
         let out =
             File::create(format!("{file_name}.flv.part")).expect("Unable to create flv file.");
         let mut buf_writer = BufWriter::new(out);
-        buf_writer.write(&FLV_HEADER)?;
+        buf_writer.write_all(&FLV_HEADER)?;
         Self::write_previous_tag_size(&mut buf_writer, 0)?;
         Ok(Self {
             buf_writer,
@@ -44,7 +44,7 @@ impl FlvFile {
         previous_tag_size: &[u8],
     ) -> std::io::Result<usize> {
         self.write_tag_header(tag_header)?;
-        self.buf_writer.write(body)?;
+        self.buf_writer.write_all(body)?;
         self.buf_writer.write(previous_tag_size)
     }
 

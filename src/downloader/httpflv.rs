@@ -24,7 +24,7 @@ pub fn download<T: Read>(connection: Connection<T>, file_name: &str, segment: Se
 fn parse_flv<T: Read>(
     mut connection: Connection<T>,
     file_name: &str,
-    segment: Segment,
+    mut segment: Segment,
 ) -> core::result::Result<(), crate::error::Error> {
     let mut flv_tags_cache: Vec<(TagHeader, Bytes, Bytes)> = Vec::new();
 
@@ -36,7 +36,6 @@ fn parse_flv<T: Read>(
     // flv_writer::to_json(&mut writer, &header)?;
 
     let mut out = FlvFile::new(file_name)?;
-    let mut first_tag_time = 0;
     let mut downloaded_size = 9 + 4;
     let mut on_meta_data = None;
     let mut aac_sequence_header = None;
@@ -148,8 +147,12 @@ fn parse_flv<T: Read>(
                     },
                 ..
             } => {
-                if is_splitting(flv_tag, &segment, &mut first_tag_time, &mut downloaded_size) {
+                if segment.needed(
+                    downloaded_size,
+                    Duration::from_millis(flv_tag.header.timestamp as u64),
+                ) {
                     // let new_file_name = format_filename(file_name);
+                    downloaded_size = 9 + 4;
                     out = FlvFile::new(file_name)?;
                     let on_meta_data = on_meta_data.as_ref().expect("on_meta_data does not exist");
                     // onMetaData
@@ -172,7 +175,7 @@ fn parse_flv<T: Read>(
                         &h264_sequence_header.1,
                         &h264_sequence_header.2,
                     )?;
-                    info!("{} splitting.", out.name);
+                    info!("{} splitting.{segment:?}", out.name);
                 }
 
                 for (tag_header, flv_tag_data, previous_tag_size_bytes) in &flv_tags_cache {
@@ -219,33 +222,33 @@ fn parse_flv<T: Read>(
     Ok(())
 }
 
-fn is_splitting(
-    flv_tag: FlvTag,
-    segment: &Segment,
-    first_tag_time: &mut u32,
-    downloaded_size: &mut u64,
-) -> bool {
-    match segment {
-        Segment::Time(duration) => {
-            if duration
-                <= &Duration::from_millis((flv_tag.header.timestamp - *first_tag_time) as u64)
-            {
-                *first_tag_time = flv_tag.header.timestamp;
-                true
-            } else {
-                false
-            }
-        }
-        Segment::Size(file_size) => {
-            if *downloaded_size >= *file_size {
-                *downloaded_size = 9 + 4;
-                true
-            } else {
-                false
-            }
-        }
-    }
-}
+// fn is_splitting(
+//     flv_tag: FlvTag,
+//     segment: &Segment,
+//     first_tag_time: &mut u32,
+//     downloaded_size: &mut u64,
+// ) -> bool {
+//     match segment {
+//         Segment::Time(duration, _) => {
+//             if duration
+//                 <= &Duration::from_millis((flv_tag.header.timestamp - *first_tag_time) as u64)
+//             {
+//                 *first_tag_time = flv_tag.header.timestamp;
+//                 true
+//             } else {
+//                 false
+//             }
+//         }
+//         Segment::Size(file_size, _) => {
+//             if *downloaded_size >= *file_size {
+//                 *downloaded_size = 9 + 4;
+//                 true
+//             } else {
+//                 false
+//             }
+//         }
+//     }
+// }
 
 pub fn map_parse_err<'a, T>(
     i_result: IResult<&'a [u8], T>,
