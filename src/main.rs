@@ -22,7 +22,7 @@ fn main() -> Result<(), Error> {
     connection.read_frame(9)?;
     download(
         connection,
-        &(file_name.to_owned() + "new"),
+        &(file_name.to_owned() + "new%H_%M_%S%.f"),
         Segment::Time(Duration::from_secs(60 * 60 * 24), Default::default()),
     );
     // Ok(result)

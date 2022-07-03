@@ -116,7 +116,7 @@ mod tests {
             headers,
             "testdouyu%Y-%m-%dT%H_%M_%S",
             // Segment::Size(20 * 1024 * 1024, 0),
-            Segment::Time(std::time::Duration::from_secs(60), Default::default()),
+            Segment::Time(std::time::Duration::from_secs(6000), Default::default()),
         )?;
         Ok(())
     }

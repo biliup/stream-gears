@@ -39,7 +39,7 @@ fn parse_flv<T: Read>(
     let mut downloaded_size = 9 + 4;
     let mut on_meta_data = None;
     let mut aac_sequence_header = None;
-    let mut h264_sequence_header = None;
+    let mut h264_sequence_header: Option<(TagHeader, Bytes, Bytes)> = None;
     let mut prev_timestamp = 0;
     let mut create_new = false;
     loop {
@@ -95,13 +95,18 @@ fn parse_flv<T: Read>(
                     let (_, avc_video_header) = avc_video_packet_header(video_data.video_data)
                         .expect("Error in parsing avc video packet header.");
                     if avc_video_header.packet_type == AVCPacketType::SequenceHeader {
-                        if h264_sequence_header.is_some() {
-                            warn!("Unexpected h264 sequence header tag. {tag_header:?}");
-                            // panic!("Unexpected h264 sequence header tag.");
-                            create_new = true;
-                        }
-                        h264_sequence_header =
-                            Some((tag_header, bytes.clone(), previous_tag_size.clone()));
+                        h264_sequence_header = match h264_sequence_header {
+                            None => Some((tag_header, bytes.clone(), previous_tag_size.clone())),
+                            Some((_, binary_data, _)) => {
+                                warn!("Unexpected h264 sequence header tag. {tag_header:?}");
+                                // panic!("Unexpected h264 sequence header tag.");
+                                if bytes != binary_data {
+                                    create_new = true;
+                                    warn!("Different h264 sequence header tag. {tag_header:?}");
+                                }
+                                Some((tag_header, bytes.clone(), previous_tag_size.clone()))
+                            }
+                        };
                     }
                     (
                         Some(avc_video_header.packet_type),
