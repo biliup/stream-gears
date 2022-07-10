@@ -1,16 +1,14 @@
-use std::any::Any;
-use std::collections::HashMap;
 use anyhow::{Context, Result};
 use biliup::client::Client;
 use biliup::line::{self, Probe};
 use biliup::video::{BiliBili, Studio};
 use biliup::VideoFile;
+use futures::StreamExt;
 use pyo3::pyclass;
+use serde_json::Value;
 use std::path::PathBuf;
 use std::time::Instant;
 use tracing::info;
-use futures::StreamExt;
-use serde_json::Value;
 
 #[pyclass]
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -67,13 +65,15 @@ pub async fn upload(
 
         let instant = Instant::now();
 
-        let video = uploader.upload(&client, limit, |vs| {
-            vs.map(|vs| {
-                let chunk = vs?;
-                let len = chunk.len();
-                Ok((chunk, len))
+        let video = uploader
+            .upload(&client, limit, |vs| {
+                vs.map(|vs| {
+                    let chunk = vs?;
+                    let len = chunk.len();
+                    Ok((chunk, len))
+                })
             })
-        }).await?;
+            .await?;
         let t = instant.elapsed().as_millis();
         info!(
             "Upload completed: {file_name} => cost {:.2}s, {:.2} MB/s.",
