@@ -1,3 +1,5 @@
+use std::any::Any;
+use std::collections::HashMap;
 use anyhow::{Context, Result};
 use biliup::client::Client;
 use biliup::line::{self, Probe};
@@ -7,6 +9,8 @@ use pyo3::pyclass;
 use std::path::PathBuf;
 use std::time::Instant;
 use tracing::info;
+use futures::StreamExt;
+use serde_json::Value;
 
 #[pyclass]
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -33,7 +37,7 @@ pub async fn upload(
     dynamic: String,
     cover: String,
     dtime: Option<u32>,
-) -> Result<()> {
+) -> Result<Value> {
     let client: Client = Default::default();
     let file = std::fs::File::options()
         .read(true)
@@ -63,7 +67,13 @@ pub async fn upload(
 
         let instant = Instant::now();
 
-        let video = uploader.upload(&client, limit, |vs| vs).await?;
+        let video = uploader.upload(&client, limit, |vs| {
+            vs.map(|vs| {
+                let chunk = vs?;
+                let len = chunk.len();
+                Ok((chunk, len))
+            })
+        }).await?;
         let t = instant.elapsed().as_millis();
         info!(
             "Upload completed: {file_name} => cost {:.2}s, {:.2} MB/s.",
@@ -94,7 +104,6 @@ pub async fn upload(
         println!("{url}");
         studio.cover = url;
     }
-    studio.submit(&login_info).await?;
+    Ok(studio.submit(&login_info).await?)
     // Ok(videos)
-    Ok(())
 }

@@ -4,6 +4,7 @@ pub mod flv_parser;
 pub mod flv_writer;
 mod uploader;
 
+use std::any::Any;
 use crate::downloader::construct_headers;
 use crate::uploader::UploadLine;
 
@@ -13,6 +14,7 @@ use downloader::util::Segment;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
+use serde_json::Value;
 use tracing_subscriber::layer::SubscriberExt;
 
 #[derive(FromPyObject)]
@@ -121,7 +123,7 @@ fn upload(
                 cover,
                 dtime,
             )) {
-                Ok(res) => Ok(res),
+                Ok(_res) => Ok(()),
                 // Ok(_) => {  },
                 Err(err) => {
                     return Err(pyo3::exceptions::PyRuntimeError::new_err(format!(

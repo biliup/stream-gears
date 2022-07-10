@@ -13,7 +13,7 @@ crate-type = ["cdylib", "lib"]
 
 [dependencies]
 pyo3 = { version = "0.16.3", features = ["extension-module"] }
-biliup = "0.1.9"
+biliup = "0.1.10"
 reqwest = { version = "*", features = ["blocking", "deflate", "gzip"] }
 url = "*"
 m3u8-rs = "4.0.0"
@@ -29,3 +29,4 @@ tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 tracing-appender = "0.2"
+futures = "0.3.21"

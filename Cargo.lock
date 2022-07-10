@@ -99,9 +99,9 @@ checksum = "e6b4d9b1225d28d360ec6a231d65af1fd99a2a095154c8040689617290569c5c"
 
 [[package]]
 name = "biliup"
-version = "0.1.9"
+version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9b034d8b3d8e78a6456d3466340b752f59de02372d1e9ccda24e31f3926f631c"
+checksum = "cf37c383a27bb1f3e5da204b2537e0314de25c5bc1d044946df25298b86f06c1"
 dependencies = [
  "anyhow",
  "base64",
@@ -128,6 +128,8 @@ dependencies = [
  "serde_yaml",
  "thiserror",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
  "typed-builder",
  "url",
 ]
@@ -1965,6 +1967,7 @@ dependencies = [
  "byteorder",
  "bytes",
  "chrono",
+ "futures",
  "m3u8-rs",
  "nom",
  "pyo3",
