@@ -3,6 +3,7 @@ pub mod error;
 pub mod flv_parser;
 pub mod flv_writer;
 mod uploader;
+mod login;
 
 use crate::downloader::construct_headers;
 use crate::uploader::UploadLine;
@@ -70,6 +71,82 @@ fn download(
             }
         })
     })
+}
+#[pyfunction]
+fn login_by_cookies()->PyResult<bool>{
+    let  rt = tokio::runtime::Runtime::new().unwrap();
+    let  result =rt.block_on(async {
+         login::login_by_cookies().await
+    });
+    match result{
+        Ok(_) => Ok(true),
+        Err(err) => {
+            return Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
+                "{}, {}",
+                err.root_cause(),
+                err
+            )));
+        }
+    }
+
+
+}
+#[pyfunction]
+ fn send_sms(country_code:u32,phone:u64) -> PyResult<String> {
+    let  rt = tokio::runtime::Runtime::new().unwrap();
+    let  result= rt.block_on(async {
+       login::send_sms(country_code,phone).await
+    });
+    match result{
+        Ok(res)=>{
+            Ok(res.to_string())
+        }
+        Err(err)=>{
+            Err(pyo3::exceptions::PyRuntimeError::new_err(format!("{}",err)))
+        }
+    }
+}
+#[pyfunction]
+ fn login_by_sms(code:u32,  ret:String) -> PyResult<bool>{
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let  result= rt.block_on(async {
+        login::login_by_sms(code,serde_json::from_str(&ret).unwrap()).await
+    });
+    match result
+    {
+        Ok(_)=>Ok(true),
+        Err(_)=>Ok(false),
+    }
+}
+#[pyfunction]
+fn get_qrcode()->PyResult<String>{
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let  result= rt.block_on(async {
+        login::get_qrcode().await
+    });
+    match result{
+        Ok(res)=>{
+            Ok(res.to_string())
+        }
+        Err(err)=>{
+            Err(pyo3::exceptions::PyRuntimeError::new_err(format!("{}",err)))
+        }
+    }
+}
+#[pyfunction]
+fn login_by_qrcode(ret:String) -> PyResult<bool>{
+    let  rt = tokio::runtime::Runtime::new().unwrap();
+    let result= rt.block_on(async {
+        login::login_by_qrcode(serde_json::from_str(&ret).unwrap()).await
+    });
+    match result
+    {
+        Ok(_)=>Ok(true),
+        Err(err)=>{
+            Err(pyo3::exceptions::PyRuntimeError::new_err(format!("{}",err)))
+        },
+    }
+
 }
 
 #[pyfunction]
@@ -146,6 +223,11 @@ fn stream_gears(_py: Python, m: &PyModule) -> PyResult<()> {
     //     .init();
     m.add_function(wrap_pyfunction!(upload, m)?)?;
     m.add_function(wrap_pyfunction!(download, m)?)?;
+    m.add_function(wrap_pyfunction!(login_by_cookies, m)?)?;
+    m.add_function(wrap_pyfunction!(send_sms, m)?)?;
+    m.add_function(wrap_pyfunction!(login_by_qrcode, m)?)?;
+    m.add_function(wrap_pyfunction!(get_qrcode, m)?)?;
+    // m.add_function(wrap_pyfunction(login_by_sms, m)?)?;
     m.add_class::<UploadLine>()?;
     Ok(())
 }
