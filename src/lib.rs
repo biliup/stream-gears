@@ -14,7 +14,6 @@ use downloader::util::Segment;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
-use biliup::client;
 
 use tracing_subscriber::layer::SubscriberExt;
 
@@ -75,8 +74,8 @@ fn download(
 }
 #[pyfunction]
 fn login_by_cookies()->PyResult<bool>{
-    let mut rt = tokio::runtime::Runtime::new().unwrap();
-    let mut result =rt.block_on(async {
+    let  rt = tokio::runtime::Runtime::new().unwrap();
+    let  result =rt.block_on(async {
          login::login_by_cookies().await
     });
     match result{
@@ -94,10 +93,9 @@ fn login_by_cookies()->PyResult<bool>{
 }
 #[pyfunction]
  fn send_sms(country_code:u32,phone:u64) -> PyResult<String> {
-    let mut rt = tokio::runtime::Runtime::new().unwrap();
-    let mut result= Ok(serde_json::Value::Null);
-    rt.block_on(async {
-       result =login::send_sms(country_code,phone).await;
+    let  rt = tokio::runtime::Runtime::new().unwrap();
+    let  result= rt.block_on(async {
+       login::send_sms(country_code,phone).await
     });
     match result{
         Ok(res)=>{
@@ -110,23 +108,21 @@ fn login_by_cookies()->PyResult<bool>{
 }
 #[pyfunction]
  fn login_by_sms(code:u32,  ret:String) -> PyResult<bool>{
-    let mut rt = tokio::runtime::Runtime::new().unwrap();
-    let mut result= Ok(false);
-    rt.block_on(async {
-        result =login::login_by_sms(code,serde_json::from_str(&ret).unwrap()).await;
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let  result= rt.block_on(async {
+        login::login_by_sms(code,serde_json::from_str(&ret).unwrap()).await
     });
     match result
     {
-        Ok(res)=>Ok(true),
-        Err(err)=>Ok(false),
+        Ok(_)=>Ok(true),
+        Err(_)=>Ok(false),
     }
 }
 #[pyfunction]
 fn get_qrcode()->PyResult<String>{
-    let mut rt = tokio::runtime::Runtime::new().unwrap();
-    let mut result= Ok(serde_json::Value::Null);
-    rt.block_on(async {
-        result =login::get_qrcode().await;
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let  result= rt.block_on(async {
+        login::get_qrcode().await
     });
     match result{
         Ok(res)=>{
@@ -139,14 +135,13 @@ fn get_qrcode()->PyResult<String>{
 }
 #[pyfunction]
 fn login_by_qrcode(ret:String) -> PyResult<bool>{
-    let mut rt = tokio::runtime::Runtime::new().unwrap();
-    let mut result= Ok(false);
-    rt.block_on(async {
-        result =login::login_by_qrcode(serde_json::from_str(&ret).unwrap()).await;
+    let  rt = tokio::runtime::Runtime::new().unwrap();
+    let result= rt.block_on(async {
+        login::login_by_qrcode(serde_json::from_str(&ret).unwrap()).await
     });
     match result
     {
-        Ok(res)=>Ok(true),
+        Ok(_)=>Ok(true),
         Err(err)=>{
             Err(pyo3::exceptions::PyRuntimeError::new_err(format!("{}",err)))
         },
