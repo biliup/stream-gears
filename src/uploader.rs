@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use biliup::client::Client;
 use biliup::line::{self, Probe};
-use biliup::video::{BiliBili, Studio};
+use biliup::video::{BiliBili, Studio, Video};
 use biliup::VideoFile;
 use futures::StreamExt;
 use pyo3::pyclass;
@@ -21,29 +21,12 @@ pub enum UploadLine {
     CosInternal,
 }
 
-pub async fn upload(
+async fn upload_vid(
+    client: &Client,
     video_path: Vec<PathBuf>,
-    cookie_file: PathBuf,
     line: Option<UploadLine>,
     limit: usize,
-    title: String,
-    tid: u16,
-    tag: String,
-    copyright: u8,
-    source: String,
-    desc: String,
-    dynamic: String,
-    cover: String,
-    dtime: Option<u32>,
-) -> Result<Value> {
-    let client: Client = Default::default();
-    let file = std::fs::File::options()
-        .read(true)
-        .write(true)
-        .open(&cookie_file);
-    let login_info = client
-        .login_by_cookies(file.with_context(|| cookie_file.to_str().unwrap().to_string())?)
-        .await?;
+) -> Result<Vec<Video>> {
     let mut videos = Vec::new();
     let line = match line {
         Some(UploadLine::Kodo) => line::kodo(),
@@ -82,6 +65,33 @@ pub async fn upload(
         );
         videos.push(video);
     }
+    return Ok(videos);
+}
+
+pub async fn upload(
+    video_path: Vec<PathBuf>,
+    cookie_file: PathBuf,
+    line: Option<UploadLine>,
+    limit: usize,
+    title: String,
+    tid: u16,
+    tag: String,
+    copyright: u8,
+    source: String,
+    desc: String,
+    dynamic: String,
+    cover: String,
+    dtime: Option<u32>,
+) -> Result<Value> {
+    let client: Client = Default::default();
+    let file = std::fs::File::options()
+        .read(true)
+        .write(true)
+        .open(&cookie_file);
+    let login_info = client
+        .login_by_cookies(file.with_context(|| cookie_file.to_str().unwrap().to_string())?)
+        .await?;
+    let videos = upload_vid(&client, video_path, line, limit).await?;
     let mut studio: Studio = Studio::builder()
         .desc(desc)
         .dtime(dtime)
@@ -105,5 +115,149 @@ pub async fn upload(
         studio.cover = url;
     }
     Ok(studio.submit(&login_info).await?)
+    // Ok(videos)
+}
+
+pub async fn edit(
+    aid: u64,
+    video_path: Vec<PathBuf>,
+    cookie_file: PathBuf,
+    line: Option<UploadLine>,
+    limit: usize,
+    title: String,
+    tid: u16,
+    tag: String,
+    copyright: u8,
+    source: String,
+    desc: String,
+    dynamic: String,
+    cover: String,
+    dtime: Option<u32>,
+) -> Result<Value> {
+    let client: Client = Default::default();
+    let login_info = client
+        .login_by_web_cookies(&sess_data, &bili_jct)
+        .await?;
+    let videos = upload_vid(&client, video_path, line, limit).await?;
+    let mut studio: Studio = Studio::builder()
+        .aid(aid)
+        .desc(desc)
+        .dtime(dtime)
+        .copyright(copyright)
+        .cover(cover)
+        .dynamic(dynamic)
+        .source(source)
+        .tag(tag)
+        .tid(tid)
+        .title(title)
+        .videos(videos)
+        .build();
+    if !studio.cover.is_empty() {
+        let url = BiliBili::new(&login_info, &client)
+            .cover_up(
+                &std::fs::read(&studio.cover)
+                    .with_context(|| format!("cover: {}", studio.cover))?,
+            )
+            .await?;
+        println!("{url}");
+        studio.cover = url;
+    }
+    Ok(studio.edit(&login_info).await?)
+    // Ok(videos)
+}
+
+pub async fn upload_web_cookies(
+    video_path: Vec<PathBuf>,
+    sess_data: String,
+    bili_jct: String,
+    line: Option<UploadLine>,
+    limit: usize,
+    title: String,
+    tid: u16,
+    tag: String,
+    copyright: u8,
+    source: String,
+    desc: String,
+    dynamic: String,
+    cover: String,
+    dtime: Option<u32>,
+) -> Result<Value> {
+    let client: Client = Default::default();
+    let login_info = client
+        .login_by_web_cookies(&sess_data, &bili_jct)
+        .await?;
+    let videos = upload_vid(&client, video_path, line, limit).await?;
+    let mut studio: Studio = Studio::builder()
+        .desc(desc)
+        .dtime(dtime)
+        .copyright(copyright)
+        .cover(cover)
+        .dynamic(dynamic)
+        .source(source)
+        .tag(tag)
+        .tid(tid)
+        .title(title)
+        .videos(videos)
+        .build();
+    if !studio.cover.is_empty() {
+        let url = BiliBili::new(&login_info, &client)
+            .cover_up(
+                &std::fs::read(&studio.cover)
+                    .with_context(|| format!("cover: {}", studio.cover))?,
+            )
+            .await?;
+        println!("{url}");
+        studio.cover = url;
+    }
+    Ok(studio.submit(&login_info).await?)
+    // Ok(videos)
+}
+
+pub async fn edit_web_cookies(
+    aid: u64,
+    video_path: Vec<PathBuf>,
+    sess_data: String,
+    bili_jct: String,
+    line: Option<UploadLine>,
+    limit: usize,
+    title: String,
+    tid: u16,
+    tag: String,
+    copyright: u8,
+    source: String,
+    desc: String,
+    dynamic: String,
+    cover: String,
+    dtime: Option<u32>,
+) -> Result<Value> {
+    let client: Client = Default::default();
+    let login_info = client
+        .login_by_web_cookies(&sess_data, &bili_jct)
+        .await?;
+    let videos = upload_vid(&client, video_path, line, limit).await?;
+    let mut studio: Studio = Studio::builder()
+        .aid(aid)
+        .desc(desc)
+        .dtime(dtime)
+        .copyright(copyright)
+        .cover(cover)
+        .dynamic(dynamic)
+        .source(source)
+        .tag(tag)
+        .tid(tid)
+        .title(title)
+        .videos(videos)
+        .build();
+    if !studio.cover.is_empty() {
+        let url = BiliBili::new(&login_info, &client)
+            .cover_up(
+                &std::fs::read(&studio.cover)
+                    .with_context(|| format!("cover: {}", studio.cover))?,
+            )
+            .await?;
+        println!("{url}");
+        studio.cover = url;
+    }
+    Ok(studio.edit(&login_info).await?)
     // Ok(videos)
 }
