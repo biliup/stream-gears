@@ -1,0 +1,24 @@
+Metadata-Version: 2.1
+Name: stream-gears
+Version: 0.1.15
+Classifier: Programming Language :: Rust
+Classifier: Programming Language :: Python :: Implementation :: CPython
+Classifier: Programming Language :: Python :: Implementation :: PyPy
+Requires-Python: >=3.7
+Description-Content-Type: text/markdown; charset=UTF-8; variant=GFM
+
+# stream-gears
+通过 PyO3 导出**上传** B 站与**下载** FLV、HLS 流的函数供Python调用,
+支持时间或文件大小分段，同时解决拉取FLV流花屏的问题。
+
+## Dev
+1. Install the latest [Rust compiler](https://www.rust-lang.org/tools/install)
+2. Install [maturin](https://maturin.rs/): `$ pip3 install maturin`
+```shell
+$ python -m venv .env
+$ source .env/bin/activate
+$ maturin develop
+```
+
+## Credits
+感谢 [Genteure](https://github.com/Genteure) 提供帮助

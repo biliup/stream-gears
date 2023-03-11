@@ -1,25 +1,26 @@
-use crate::downloader::util::format_filename;
-use crate::error::Result;
-use crate::Segment;
+use crate::downloader::error::Result;
+use crate::downloader::util::{format_filename, Segmentable};
 use m3u8_rs::Playlist;
-use reqwest::header::HeaderMap;
+
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
 use url::Url;
 
-pub fn download(
+use crate::client::StatelessClient;
+
+pub async fn download(
     url: &str,
-    headers: &HeaderMap,
+    client: &StatelessClient,
     file_name: &str,
-    mut splitting: Segment,
+    mut splitting: Segmentable,
 ) -> Result<()> {
     println!("Downloading {}...", url);
-    let resp = super::get_response(url, headers)?;
+    let resp = client.retryable(url).await?;
     println!("{}", resp.status());
     // let mut resp = resp.bytes_stream();
-    let bytes = resp.bytes()?;
+    let bytes = resp.bytes().await?;
     let mut ts_file = TsFile::new(file_name);
 
     let mut media_url = Url::parse(url)?;
@@ -28,8 +29,8 @@ pub fn download(
             println!("Master playlist:\n{:#?}", pl);
             media_url = media_url.join(&pl.variants[0].uri)?;
             println!("media url: {media_url}");
-            let resp = super::get_response(media_url.as_str(), headers)?;
-            let bs = resp.bytes()?;
+            let resp = client.retryable(media_url.as_str()).await?;
+            let bs = resp.bytes().await?;
             // println!("{:?}", bs);
             if let Ok((_, pl)) = m3u8_rs::parse_media_playlist(&bs) {
                 pl
@@ -62,23 +63,28 @@ pub fn download(
                 if segment.discontinuity {
                     warn!("#EXT-X-DISCONTINUITY");
                     ts_file = TsFile::new(file_name);
-                    splitting = Segment::from_seg(splitting);
+                    // splitting = Segment::from_seg(splitting);
+                    splitting.reset();
                 }
                 let length = download_to_file(
                     media_url.join(&segment.uri)?,
-                    headers,
+                    client,
                     &mut ts_file.buf_writer,
-                )?;
-                if splitting.needed_delta(length, Duration::from_secs(segment.duration as u64)) {
+                )
+                .await?;
+                splitting.increase_size(length);
+                splitting.increase_time(Duration::from_secs(segment.duration as u64));
+                if splitting.needed() {
                     ts_file = TsFile::new(file_name);
                     info!("{} splitting.{splitting:?}", ts_file.name);
+                    splitting.reset();
                 }
                 previous_last_segment = seq;
             }
             seq += 1;
         }
-        let resp = super::get_response(media_url.as_str(), headers)?;
-        let bs = resp.bytes()?;
+        let resp = client.retryable(media_url.as_str()).await?;
+        let bs = resp.bytes().await?;
         if let Ok((_, playlist)) = m3u8_rs::parse_media_playlist(&bs) {
             pl = playlist;
         }
@@ -87,13 +93,18 @@ pub fn download(
     Ok(())
 }
 
-fn download_to_file(url: Url, headers: &HeaderMap, out: &mut impl Write) -> reqwest::Result<u64> {
+async fn download_to_file(url: Url, client: &StatelessClient, out: &mut impl Write) -> Result<u64> {
     debug!("url: {url}");
-    let mut response = super::get_response(url.as_str(), headers)?;
+    let mut response = client.retryable(url.as_str()).await?;
+    let mut length: u64 = 0;
+    while let Some(chunk) = response.chunk().await? {
+        length += chunk.len() as u64;
+        out.write_all(&chunk)?;
+    }
     // let mut out = File::options()
     //     .append(true)
     //     .open(format!("{file_name}.ts"))?;
-    let length = response.copy_to(out)?;
+    // let length = response.copy_to(out)?;
     Ok(length)
 }
 

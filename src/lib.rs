@@ -1,20 +1,16 @@
-pub mod downloader;
-pub mod error;
-pub mod flv_parser;
-pub mod flv_writer;
-mod uploader;
 mod login;
-
-use crate::downloader::construct_headers;
-use crate::uploader::UploadLine;
+mod uploader;
 
 use pyo3::prelude::*;
+use uploader::PyCredit;
 
-use downloader::util::Segment;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::uploader::UploadLine;
+use biliup::downloader::construct_headers;
+use biliup::downloader::util::Segmentable;
 use tracing_subscriber::layer::SubscriberExt;
 
 #[derive(FromPyObject)]
@@ -28,6 +24,7 @@ pub enum PySegment {
         size: u64,
     },
 }
+
 
 #[pyfunction]
 fn download(
@@ -52,101 +49,80 @@ fn download(
 
         let collector = formatting_layer.with(file_layer);
         let segment = match segment {
-            PySegment::Time { time } => {
-                Segment::Time(Duration::from_secs(time), Duration::default())
-            }
-            PySegment::Size { size } => Segment::Size(size, 0),
+            PySegment::Time { time } => Segmentable::new(Some(Duration::from_secs(time)), None),
+            PySegment::Size { size } => Segmentable::new(None, Some(size)),
         };
         tracing::subscriber::with_default(collector, || -> PyResult<()> {
-            match downloader::download(url, map, file_name, segment) {
+            match biliup::downloader::download(url, map, file_name, segment) {
                 Ok(res) => Ok(res),
-                // Ok(_) => {  },
-                Err(err) => {
-                    return Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
-                        "{}, {}",
-                        err.root_cause(),
-                        err
-                    )));
-                }
+                Err(err) => Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
+                    "{}, {}",
+                    err.root_cause(),
+                    err
+                ))),
             }
         })
     })
 }
 #[pyfunction]
-fn login_by_cookies()->PyResult<bool>{
-    let  rt = tokio::runtime::Runtime::new().unwrap();
-    let  result =rt.block_on(async {
-         login::login_by_cookies().await
-    });
-    match result{
+fn login_by_cookies() -> PyResult<bool> {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let result = rt.block_on(async { login::login_by_cookies().await });
+    match result {
         Ok(_) => Ok(true),
-        Err(err) => {
-            return Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
-                "{}, {}",
-                err.root_cause(),
-                err
-            )));
-        }
-    }
-
-
-}
-#[pyfunction]
- fn send_sms(country_code:u32,phone:u64) -> PyResult<String> {
-    let  rt = tokio::runtime::Runtime::new().unwrap();
-    let  result= rt.block_on(async {
-       login::send_sms(country_code,phone).await
-    });
-    match result{
-        Ok(res)=>{
-            Ok(res.to_string())
-        }
-        Err(err)=>{
-            Err(pyo3::exceptions::PyRuntimeError::new_err(format!("{}",err)))
-        }
+        Err(err) => Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
+            "{}, {}",
+            err.root_cause(),
+            err
+        ))),
     }
 }
 #[pyfunction]
- fn login_by_sms(code:u32,  ret:String) -> PyResult<bool>{
+fn send_sms(country_code: u32, phone: u64) -> PyResult<String> {
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let  result= rt.block_on(async {
-        login::login_by_sms(code,serde_json::from_str(&ret).unwrap()).await
-    });
-    match result
-    {
-        Ok(_)=>Ok(true),
-        Err(_)=>Ok(false),
+    let result = rt.block_on(async { login::send_sms(country_code, phone).await });
+    match result {
+        Ok(res) => Ok(res.to_string()),
+        Err(err) => Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
+            "{}",
+            err
+        ))),
     }
 }
 #[pyfunction]
-fn get_qrcode()->PyResult<String>{
+fn login_by_sms(code: u32, ret: String) -> PyResult<bool> {
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let  result= rt.block_on(async {
-        login::get_qrcode().await
-    });
-    match result{
-        Ok(res)=>{
-            Ok(res.to_string())
-        }
-        Err(err)=>{
-            Err(pyo3::exceptions::PyRuntimeError::new_err(format!("{}",err)))
-        }
+    let result =
+        rt.block_on(async { login::login_by_sms(code, serde_json::from_str(&ret).unwrap()).await });
+    match result {
+        Ok(_) => Ok(true),
+        Err(_) => Ok(false),
     }
 }
 #[pyfunction]
-fn login_by_qrcode(ret:String) -> PyResult<bool>{
-    let  rt = tokio::runtime::Runtime::new().unwrap();
-    let result= rt.block_on(async {
-        login::login_by_qrcode(serde_json::from_str(&ret).unwrap()).await
-    });
-    match result
-    {
-        Ok(_)=>Ok(true),
-        Err(err)=>{
-            Err(pyo3::exceptions::PyRuntimeError::new_err(format!("{}",err)))
-        },
+fn get_qrcode() -> PyResult<String> {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let result = rt.block_on(async { login::get_qrcode().await });
+    match result {
+        Ok(res) => Ok(res.to_string()),
+        Err(err) => Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
+            "{}",
+            err
+        ))),
     }
-
+}
+#[pyfunction]
+fn login_by_qrcode(ret: String) -> PyResult<bool> {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let result =
+        rt.block_on(async { login::login_by_qrcode(serde_json::from_str(&ret).unwrap()).await });
+    match result {
+        Ok(_) => Ok(true),
+        Err(err) => Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
+            "{}",
+            err
+        ))),
+    }
 }
 
 #[pyfunction]
@@ -165,6 +141,7 @@ fn upload(
     dtime: Option<u32>,
     line: Option<UploadLine>,
     limit: usize,
+    desc_v2: Vec<PyCredit>,
 ) -> PyResult<()> {
     py.allow_threads(|| {
         let rt = tokio::runtime::Builder::new_current_thread()
@@ -198,16 +175,15 @@ fn upload(
                 dynamic,
                 cover,
                 dtime,
+                desc_v2,
             )) {
                 Ok(_res) => Ok(()),
                 // Ok(_) => {  },
-                Err(err) => {
-                    return Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
-                        "{}, {}",
-                        err.root_cause(),
-                        err
-                    )));
-                }
+                Err(err) => Err(pyo3::exceptions::PyRuntimeError::new_err(format!(
+                    "{}, {}",
+                    err.root_cause(),
+                    err
+                ))),
             }
         })
     })

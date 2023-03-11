@@ -1,11 +1,14 @@
 use anyhow::{Context, Result};
-use biliup::client::Client;
-use biliup::line::{self, Probe};
-use biliup::video::{BiliBili, Studio};
-use biliup::VideoFile;
+use biliup::client::StatelessClient;
+use biliup::error::Kind;
+use biliup::uploader::bilibili::{Credit, ResponseData, Studio};
+use biliup::uploader::credential::login_by_cookies;
+use biliup::uploader::line::Probe;
+use biliup::uploader::{line, VideoFile};
 use futures::StreamExt;
+use pyo3::prelude::*;
 use pyo3::pyclass;
-use serde_json::Value;
+
 use std::path::PathBuf;
 use std::time::Instant;
 use tracing::info;
@@ -19,6 +22,16 @@ pub enum UploadLine {
     Kodo,
     Cos,
     CosInternal,
+}
+
+#[derive(FromPyObject)]
+pub struct PyCredit {
+    #[pyo3(item("type"))]
+    type_id: i8,
+    #[pyo3(item("raw_text"))]
+    raw_text: String,
+    #[pyo3(item("biz_id"))]
+    biz_id: Option<String>,
 }
 
 pub async fn upload(
@@ -35,15 +48,20 @@ pub async fn upload(
     dynamic: String,
     cover: String,
     dtime: Option<u32>,
-) -> Result<Value> {
-    let client: Client = Default::default();
-    let file = std::fs::File::options()
-        .read(true)
-        .write(true)
-        .open(&cookie_file);
-    let login_info = client
-        .login_by_cookies(file.with_context(|| cookie_file.to_str().unwrap().to_string())?)
-        .await?;
+    desc_v2_PyCredit: Vec<PyCredit>,
+) -> Result<ResponseData> {
+    // let file = std::fs::File::options()
+    //     .read(true)
+    //     .write(true)
+    //     .open(&cookie_file);
+    let bilibili = login_by_cookies(&cookie_file).await;
+    let bilibili = if let Err(Kind::IO(_)) = bilibili {
+        bilibili
+            .with_context(|| String::from("open cookies file: ") + &cookie_file.to_string_lossy())?
+    } else {
+        bilibili?
+    };
+    let client = StatelessClient::default();
     let mut videos = Vec::new();
     let line = match line {
         Some(UploadLine::Kodo) => line::kodo(),
@@ -52,7 +70,7 @@ pub async fn upload(
         Some(UploadLine::Qn) => line::qn(),
         Some(UploadLine::Cos) => line::cos(),
         Some(UploadLine::CosInternal) => line::cos_internal(),
-        None => Probe::probe().await.unwrap_or_default(),
+        None => Probe::probe(&client.client).await.unwrap_or_default(),
     };
     // let line = line::kodo();
     for video_path in video_path {
@@ -61,12 +79,12 @@ pub async fn upload(
         let video_file = VideoFile::new(&video_path)?;
         let total_size = video_file.total_size;
         let file_name = video_file.file_name.clone();
-        let uploader = line.to_uploader(video_file);
+        let uploader = line.pre_upload(&bilibili, video_file).await?;
 
         let instant = Instant::now();
 
         let video = uploader
-            .upload(&client, limit, |vs| {
+            .upload(client.clone(), limit, |vs| {
                 vs.map(|vs| {
                     let chunk = vs?;
                     let len = chunk.len();
@@ -82,6 +100,14 @@ pub async fn upload(
         );
         videos.push(video);
     }
+    let mut desc_v2 = Vec::new();
+    for pyCredit in desc_v2_PyCredit {
+        desc_v2.push(Credit {
+            type_id: pyCredit.type_id,
+            raw_text: pyCredit.raw_text,
+            biz_id: pyCredit.biz_id,
+        });
+    }
     let mut studio: Studio = Studio::builder()
         .desc(desc)
         .dtime(dtime)
@@ -93,9 +119,10 @@ pub async fn upload(
         .tid(tid)
         .title(title)
         .videos(videos)
+        .desc_v2(desc_v2)
         .build();
     if !studio.cover.is_empty() {
-        let url = BiliBili::new(&login_info, &client)
+        let url = bilibili
             .cover_up(
                 &std::fs::read(&studio.cover)
                     .with_context(|| format!("cover: {}", studio.cover))?,
@@ -104,6 +131,6 @@ pub async fn upload(
         println!("{url}");
         studio.cover = url;
     }
-    Ok(studio.submit(&login_info).await?)
+    Ok(bilibili.submit(&studio).await?)
     // Ok(videos)
 }

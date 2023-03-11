@@ -50,6 +50,9 @@ coverage.xml
 .mr.developer.cfg
 .project
 .pydevproject
+cookies.json
+config.toml
+bili.cookie
 
 # Rope
 .ropeproject
@@ -71,7 +74,7 @@ docs/_build/
 
 # Pyenv
 .python-version
-cookies.json
+*.db
 *.mp4
 *.log.*
 *.flv

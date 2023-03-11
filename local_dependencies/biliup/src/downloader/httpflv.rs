@@ -1,17 +1,19 @@
-use crate::downloader::util::Segment;
-use crate::flv_parser::{
+use crate::downloader::flv_parser::{
     aac_audio_packet_header, avc_video_packet_header, script_data, tag_data, tag_header,
     AACPacketType, AVCPacketType, CodecId, FrameType, SoundFormat, TagData, TagHeader,
 };
-use crate::flv_writer::{FlvFile, FlvTag, TagDataHeader};
+use crate::downloader::flv_writer::{FlvFile, FlvTag, TagDataHeader};
+use crate::downloader::util::{LifecycleFile, Segmentable};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use nom::{Err, IResult};
-use std::io::{ErrorKind, Read};
+use reqwest::Response;
+
 use std::time::Duration;
 use tracing::{info, warn};
 
-pub fn download<T: Read>(connection: Connection<T>, file_name: &str, segment: Segment) {
-    match parse_flv(connection, file_name, segment) {
+pub async fn download(connection: Connection, file_name: &str, segment: Segmentable) {
+    let file: LifecycleFile = LifecycleFile::new(file_name, "flv", None);
+    match parse_flv(connection, file, segment).await {
         Ok(_) => {
             info!("Done... {file_name}");
         }
@@ -21,29 +23,25 @@ pub fn download<T: Read>(connection: Connection<T>, file_name: &str, segment: Se
     }
 }
 
-fn parse_flv<T: Read>(
-    mut connection: Connection<T>,
-    file_name: &str,
-    mut segment: Segment,
-) -> core::result::Result<(), crate::error::Error> {
+pub(crate) async fn parse_flv(
+    mut connection: Connection,
+    file: LifecycleFile,
+    mut segment: Segmentable,
+) -> crate::downloader::error::Result<()> {
     let mut flv_tags_cache: Vec<(TagHeader, Bytes, Bytes)> = Vec::new();
 
-    let _previous_tag_size = connection.read_frame(4)?;
-    // let mut rdr = Cursor::new(previous_tag_size);
-    // println!("{}", rdr.read_u32::<BigEndian>().unwrap());
-    // let file = std::fs::File::create(format!("{file_name}_flv.json"))?;
-    // let mut writer = BufWriter::new(file);
-    // flv_writer::to_json(&mut writer, &header)?;
+    let _previous_tag_size = connection.read_frame(4).await?;
 
-    let mut out = FlvFile::new(file_name)?;
-    let mut downloaded_size = 9 + 4;
+    let mut out = FlvFile::new(file)?;
+    segment.set_size_position(9 + 4);
+    // let mut downloaded_size = 9 + 4;
     let mut on_meta_data = None;
     let mut aac_sequence_header = None;
     let mut h264_sequence_header: Option<(TagHeader, Bytes, Bytes)> = None;
     let mut prev_timestamp = 0;
     let mut create_new = false;
     loop {
-        let tag_header_bytes = connection.read_frame(11)?;
+        let tag_header_bytes = connection.read_frame(11).await?;
         if tag_header_bytes.is_empty() {
             // let mut rdr = Cursor::new(tag_header_bytes);
             // println!("{}", rdr.read_u32::<BigEndian>().unwrap());
@@ -53,8 +51,8 @@ fn parse_flv<T: Read>(
         let (_, tag_header) = map_parse_err(tag_header(&tag_header_bytes), "tag header")?;
         // write_tag_header(&mut out, &tag_header)?;
 
-        let bytes = connection.read_frame(tag_header.data_size as usize)?;
-        let previous_tag_size = connection.read_frame(4)?;
+        let bytes = connection.read_frame(tag_header.data_size as usize).await?;
+        let previous_tag_size = connection.read_frame(4).await?;
         // out.write(&bytes)?;
         let (i, flv_tag_data) = map_parse_err(
             tag_data(tag_header.tag_type, tag_header.data_size as usize)(&bytes),
@@ -95,18 +93,15 @@ fn parse_flv<T: Read>(
                     let (_, avc_video_header) = avc_video_packet_header(video_data.video_data)
                         .expect("Error in parsing avc video packet header.");
                     if avc_video_header.packet_type == AVCPacketType::SequenceHeader {
-                        h264_sequence_header = match h264_sequence_header {
-                            None => Some((tag_header, bytes.clone(), previous_tag_size.clone())),
-                            Some((_, binary_data, _)) => {
-                                warn!("Unexpected h264 sequence header tag. {tag_header:?}");
-                                // panic!("Unexpected h264 sequence header tag.");
-                                if bytes != binary_data {
-                                    create_new = true;
-                                    warn!("Different h264 sequence header tag. {tag_header:?}");
-                                }
-                                Some((tag_header, bytes.clone(), previous_tag_size.clone()))
+                        if let Some((_, binary_data, _)) = &h264_sequence_header {
+                            warn!("Unexpected h264 sequence header tag. {tag_header:?}");
+                            if bytes != binary_data {
+                                create_new = true;
+                                warn!("Different h264 sequence header tag. {tag_header:?}");
                             }
-                        };
+                        }
+                        h264_sequence_header =
+                            Some((tag_header, bytes.clone(), previous_tag_size.clone()))
                     }
                     (
                         Some(avc_video_header.packet_type),
@@ -130,9 +125,6 @@ fn parse_flv<T: Read>(
                 let (_, tag_data) = script_data(i).expect("Error in parsing script tag.");
                 if on_meta_data.is_some() {
                     warn!("Unexpected script tag. {tag_header:?}");
-                    // create_new = true;
-
-                    // panic!("Unexpected script tag.");
                 }
                 on_meta_data = Some((tag_header, bytes.clone(), previous_tag_size.clone()));
 
@@ -152,69 +144,53 @@ fn parse_flv<T: Read>(
                     },
                 ..
             } => {
-                if segment.needed(
-                    downloaded_size,
-                    Duration::from_millis(flv_tag.header.timestamp as u64),
-                ) {
-                    // let new_file_name = format_filename(file_name);
-                    downloaded_size = 9 + 4;
-                    out = FlvFile::new(file_name)?;
-                    let on_meta_data = on_meta_data.as_ref().expect("on_meta_data does not exist");
-                    // onMetaData
-                    out.write_tag(&on_meta_data.0, &on_meta_data.1, &on_meta_data.2)?;
-                    // AACSequenceHeader
-                    let aac_sequence_header = aac_sequence_header
-                        .as_ref()
-                        .expect("aac_sequence_header does not exist");
-                    out.write_tag(
-                        &aac_sequence_header.0,
-                        &aac_sequence_header.1,
-                        &aac_sequence_header.2,
-                    )?;
-                    // H264SequenceHeader
-                    let h264_sequence_header = h264_sequence_header
-                        .as_ref()
-                        .expect("h264_sequence_header does not exist");
-                    out.write_tag(
-                        &h264_sequence_header.0,
-                        &h264_sequence_header.1,
-                        &h264_sequence_header.2,
-                    )?;
-                    info!("{} splitting.{segment:?}", out.name);
-                }
-
+                let timestamp = flv_tag.header.timestamp as u64;
+                segment.set_time_position(Duration::from_millis(timestamp));
                 for (tag_header, flv_tag_data, previous_tag_size_bytes) in &flv_tags_cache {
                     if tag_header.timestamp < prev_timestamp {
                         warn!("Non-monotonous DTS in output stream; previous: {prev_timestamp}, current: {};", tag_header.timestamp);
                     }
                     out.write_tag(tag_header, flv_tag_data, previous_tag_size_bytes)?;
-                    // out.write_tag_header( tag_header)?;
-                    // out.write(flv_tag_data)?;
-                    // out.write(previous_tag_size_bytes)?;
-                    downloaded_size += (11 + tag_header.data_size + 4) as u64;
+                    segment.increase_size((11 + tag_header.data_size + 4) as u64);
+                    // downloaded_size += (11 + tag_header.data_size + 4) as u64;
                     prev_timestamp = tag_header.timestamp
                     // println!("{downloaded_size}");
                 }
                 flv_tags_cache.clear();
-                if create_new {
-                    // let new_file_name = format_filename(file_name);
-                    out = FlvFile::new(file_name)?;
-                    // let on_meta_data = on_meta_data.as_ref().unwrap();
-                    // flv_tags_cache.push(on_meta_data)
+
+                if segment.needed() || create_new {
+                    segment.set_start_time(Duration::from_millis(timestamp));
+                    segment.set_size_position(9 + 4);
+
+                    let (meta_header, meta_bytes, previous_meta_tag_size) =
+                        on_meta_data.as_ref().expect("on_meta_data does not exist");
                     // onMetaData
-                    let on_meta_data = on_meta_data.as_ref().expect("on_meta_data does not exist");
-                    out.write_tag(&on_meta_data.0, &on_meta_data.1, &on_meta_data.2)?;
+                    flv_tags_cache.push((
+                        *meta_header,
+                        meta_bytes.clone(),
+                        previous_meta_tag_size.clone(),
+                    ));
                     // AACSequenceHeader
                     let aac_sequence_header = aac_sequence_header
                         .as_ref()
                         .expect("aac_sequence_header does not exist");
-                    out.write_tag(
-                        &aac_sequence_header.0,
-                        &aac_sequence_header.1,
-                        &aac_sequence_header.2,
-                    )?;
+                    flv_tags_cache.push((
+                        aac_sequence_header.0,
+                        aac_sequence_header.1.clone(),
+                        aac_sequence_header.2.clone(),
+                    ));
+                    if !create_new {
+                        // H264SequenceHeader
+                        flv_tags_cache.push(
+                            h264_sequence_header
+                                .as_ref()
+                                .expect("h264_sequence_header does not exist")
+                                .clone(),
+                        );
+                    }
+                    info!("{} splitting.{segment:?}", out.file.file_name);
+                    out.create_new()?;
                     create_new = false;
-                    info!("{} splitting.", out.name);
                 }
                 flv_tags_cache.push((tag_header, bytes.clone(), previous_tag_size.clone()));
             }
@@ -222,48 +198,20 @@ fn parse_flv<T: Read>(
                 flv_tags_cache.push((tag_header, bytes.clone(), previous_tag_size.clone()));
             }
         }
-        // flv_writer::to_json(&mut writer, &flv_tag)?;
     }
     Ok(())
 }
 
-// fn is_splitting(
-//     flv_tag: FlvTag,
-//     segment: &Segment,
-//     first_tag_time: &mut u32,
-//     downloaded_size: &mut u64,
-// ) -> bool {
-//     match segment {
-//         Segment::Time(duration, _) => {
-//             if duration
-//                 <= &Duration::from_millis((flv_tag.header.timestamp - *first_tag_time) as u64)
-//             {
-//                 *first_tag_time = flv_tag.header.timestamp;
-//                 true
-//             } else {
-//                 false
-//             }
-//         }
-//         Segment::Size(file_size, _) => {
-//             if *downloaded_size >= *file_size {
-//                 *downloaded_size = 9 + 4;
-//                 true
-//             } else {
-//                 false
-//             }
-//         }
-//     }
-// }
-
 pub fn map_parse_err<'a, T>(
     i_result: IResult<&'a [u8], T>,
     msg: &str,
-) -> core::result::Result<(&'a [u8], T), crate::error::Error> {
+) -> core::result::Result<(&'a [u8], T), crate::downloader::error::Error> {
     match i_result {
         Ok((i, res)) => Ok((i, res)),
-        Err(nom::Err::Incomplete(needed)) => {
-            Err(crate::error::Error::NomIncomplete(msg.to_string(), needed))
-        }
+        Err(nom::Err::Incomplete(needed)) => Err(crate::downloader::error::Error::NomIncomplete(
+            msg.to_string(),
+            needed,
+        )),
         Err(Err::Error(e)) => {
             panic!("parse {msg} err: {e:?}")
         }
@@ -273,21 +221,21 @@ pub fn map_parse_err<'a, T>(
     }
 }
 
-pub struct Connection<T> {
-    resp: T,
+pub struct Connection {
+    resp: Response,
     buffer: BytesMut,
 }
 
-impl<T: Read> Connection<T> {
-    pub fn new(resp: T) -> Connection<T> {
+impl Connection {
+    pub fn new(resp: Response) -> Connection {
         Connection {
             resp,
             buffer: BytesMut::with_capacity(8 * 1024),
         }
     }
 
-    pub fn read_frame(&mut self, chunk_size: usize) -> std::io::Result<Bytes> {
-        let mut buf = [0u8; 8 * 1024];
+    pub async fn read_frame(&mut self, chunk_size: usize) -> reqwest::Result<Bytes> {
+        // let mut buf = [0u8; 8 * 1024];
         loop {
             if chunk_size <= self.buffer.len() {
                 let bytes = Bytes::copy_from_slice(&self.buffer[..chunk_size]);
@@ -296,16 +244,25 @@ impl<T: Read> Connection<T> {
             }
             // BytesMut::with_capacity(0).deref_mut()
             // tokio::fs::File::open("").read()
-            let n = match self.resp.read(&mut buf) {
-                Ok(n) => n,
-                Err(e) if e.kind() == ErrorKind::Interrupted => continue,
-                Err(e) => return Err(e),
-            };
-
-            if n == 0 {
+            // self.resp.chunk()
+            if let Some(chunk) = self.resp.chunk().await? {
+                // let n = chunk.len();
+                // println!("Chunk: {:?}", chunk);
+                self.buffer.put(chunk);
+                // self.buffer.put_slice(&buf[..n]);
+            } else {
                 return Ok(self.buffer.split().freeze());
             }
-            self.buffer.put_slice(&buf[..n]);
+            // let n = match self.resp.read(&mut buf).await {
+            //     Ok(n) => n,
+            //     Err(e) if e.kind() == ErrorKind::Interrupted => continue,
+            //     Err(e) => return Err(e),
+            // };
+
+            // if n == 0 {
+            //     return Ok(self.buffer.split().freeze());
+            // }
+            // self.buffer.put_slice(&buf[..n]);
         }
     }
 }
